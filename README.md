@@ -1,8 +1,19 @@
 # Exif Remover Tool
 
-JPEGおよびPNG画像からExifメタデータを削除するシンプルなコマンドラインツールです。
+JPEGおよびPNG画像からExifメタデータを削除するツールです。**Web版**と**コマンドライン版**の2つの使い方を提供しています。
 
-## 機能
+## 🌐 Web版（オンラインツール）
+
+**今すぐブラウザで使用**: https://abcderp2.github.io/Exif/
+
+- ドラッグ&ドロップで簡単操作
+- 複数ファイルの一括処理
+- インストール不要
+- プライバシー保護（サーバーに送信されません）
+
+## 💻 コマンドライン版（開発者向け）
+
+### 機能
 
 - JPEG、PNG画像のExifデータを安全に削除
 - 単一ファイルまたは複数ファイルの一括処理
@@ -10,25 +21,25 @@ JPEGおよびPNG画像からExifメタデータを削除するシンプルなコ
 - エラーハンドリング機能
 - 透明度を持つPNG画像にも対応
 
-## インストール
+### インストール
 
-### 必要な環境
+#### 必要な環境
 - Python 3.9以上
 
-### 依存ライブラリのインストール
+#### 依存ライブラリのインストール
 ```bash
 pip install Pillow
 ```
 
-### ツールの取得
+#### ツールの取得
 ```bash
 git clone https://github.com/abcderp2/Exif.git
 cd Exif
 ```
 
-## 使用方法
+### 使用方法
 
-### 基本的な使い方
+#### 基本的な使い方
 ```bash
 # 単一ファイルの処理
 python exif_remover.py image.jpg
@@ -41,7 +52,7 @@ python exif_remover.py *.jpg
 python exif_remover.py photos/*.png
 ```
 
-### 出力ファイル
+#### 出力ファイル
 処理された画像は元のファイル名に `_no_exif` が追加されたファイル名で保存されます。
 
 例:
@@ -63,6 +74,12 @@ python exif_remover.py photos/*.png
 
 ## 使用例
 
+### Web版
+1. https://abcderp2.github.io/Exif/ にアクセス
+2. 画像をドラッグ&ドロップ
+3. 処理完了後にダウンロード
+
+### コマンドライン版
 ```bash
 # 写真フォルダ内のすべてのJPEG画像を処理
 python exif_remover.py photos/*.jpg
