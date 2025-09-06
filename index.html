@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exif除去ツール - オンライン版</title>
+    <title>Exif情報表示・除去ツール - オンライン版</title>
+    <!-- ExifReader.js ライブラリ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
     <style>
         * {
             margin: 0;
@@ -19,7 +21,7 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -100,6 +102,7 @@
             transition: all 0.3s ease;
             display: inline-block;
             text-decoration: none;
+            margin: 5px;
         }
 
         .btn:hover {
@@ -193,6 +196,87 @@
             font-size: 1.1em;
         }
 
+        .risk-high {
+            color: #f44336 !important;
+            font-weight: bold;
+        }
+
+        .privacy-warning {
+            background: rgba(244, 67, 54, 0.1);
+            border: 2px solid #f44336;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .privacy-warning h4 {
+            color: #f44336;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .privacy-safe {
+            background: rgba(76, 175, 80, 0.1);
+            border: 2px solid #4caf50;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .privacy-safe h4 {
+            color: #4caf50;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .exif-details {
+            background: rgba(0, 0, 0, 0.03);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .exif-section {
+            margin-bottom: 25px;
+        }
+
+        .exif-section h5 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 5px;
+        }
+
+        .exif-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .exif-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: white;
+            border-radius: 5px;
+            border-left: 3px solid #667eea;
+        }
+
+        .exif-key {
+            font-weight: 600;
+            color: #666;
+        }
+
+        .exif-value {
+            color: #333;
+            text-align: right;
+        }
+
         .image-preview {
             max-width: 100%;
             max-height: 300px;
@@ -265,7 +349,7 @@
                 padding: 40px 20px;
             }
 
-            .info-grid {
+            .info-grid, .exif-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -273,8 +357,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>🖼️ Exif除去ツール</h1>
-        <p class="subtitle">画像からプライベート情報（Exifデータ）を安全に削除します</p>
+        <h1>🖼️ Exif情報表示・除去ツール</h1>
+        <p class="subtitle">画像のExif情報を詳細表示し、プライベート情報を安全に削除します</p>
 
         <div class="upload-area" id="uploadArea">
             <div class="upload-icon">📁</div>
@@ -287,9 +371,24 @@
             <div class="progress-bar" id="progressBar"></div>
         </div>
 
+        <div class="privacy-warning" id="privacyWarning">
+            <h4>⚠️ プライバシーリスクが検出されました</h4>
+            <p id="warningText">この画像には以下の個人情報が含まれています</p>
+        </div>
+
+        <div class="privacy-safe" id="privacySafe">
+            <h4>✅ 安全です</h4>
+            <p>この画像にはExif情報が含まれていません。プライバシーリスクはありません。</p>
+        </div>
+
         <div class="file-info" id="fileInfo">
             <h4>📋 ファイル情報</h4>
             <div class="info-grid" id="infoGrid"></div>
+        </div>
+
+        <div class="exif-details" id="exifDetails">
+            <h4>📊 詳細なExif情報</h4>
+            <div id="exifContent"></div>
         </div>
 
         <img id="imagePreview" class="image-preview" alt="プレビュー">
@@ -340,6 +439,11 @@
         const result = document.getElementById('result');
         const fileInfo = document.getElementById('fileInfo');
         const infoGrid = document.getElementById('infoGrid');
+        const exifDetails = document.getElementById('exifDetails');
+        const exifContent = document.getElementById('exifContent');
+        const privacyWarning = document.getElementById('privacyWarning');
+        const privacySafe = document.getElementById('privacySafe');
+        const warningText = document.getElementById('warningText');
         const imagePreview = document.getElementById('imagePreview');
         const downloadSection = document.getElementById('downloadSection');
         const downloadBtn = document.getElementById('downloadBtn');
@@ -390,6 +494,9 @@
             progress.style.display = 'block';
             result.style.display = 'none';
             downloadSection.style.display = 'none';
+            privacyWarning.style.display = 'none';
+            privacySafe.style.display = 'none';
+            exifDetails.style.display = 'none';
 
             try {
                 for (let i = 0; i < files.length; i++) {
@@ -406,6 +513,7 @@
                     // 最初のファイルの情報とプレビューを表示
                     if (i === 0) {
                         await showFileInfo(file);
+                        await analyzeExifData(file);
                         showImagePreview(file);
                     }
                 }
@@ -423,6 +531,187 @@
             }
         }
 
+        function analyzeExifData(file) {
+            return new Promise((resolve) => {
+                if (file.type === 'image/png') {
+                    privacySafe.style.display = 'block';
+                    resolve();
+                    return;
+                }
+
+                EXIF.getData(file, function() {
+                    const allTags = EXIF.getAllTags(this);
+                    
+                    if (Object.keys(allTags).length === 0) {
+                        privacySafe.style.display = 'block';
+                        resolve();
+                        return;
+                    }
+
+                    displayExifInformation(allTags);
+                    evaluatePrivacyRisk(allTags);
+                    resolve();
+                });
+            });
+        }
+
+        function displayExifInformation(exifData) {
+            if (Object.keys(exifData).length === 0) return;
+
+            exifDetails.style.display = 'block';
+
+            const sections = {
+                camera: {
+                    title: '📷 カメラ情報',
+                    fields: {
+                        'Make': 'メーカー',
+                        'Model': '機種',
+                        'Software': 'ソフトウェア',
+                        'LensModel': 'レンズ',
+                        'Artist': '作者',
+                        'Copyright': '著作権'
+                    }
+                },
+                settings: {
+                    title: '⚙️ 撮影設定',
+                    fields: {
+                        'ExposureTime': '露出時間',
+                        'FNumber': 'F値',
+                        'ISO': 'ISO感度',
+                        'FocalLength': '焦点距離',
+                        'Flash': 'フラッシュ',
+                        'WhiteBalance': 'ホワイトバランス',
+                        'ExposureMode': '露出モード',
+                        'MeteringMode': '測光モード'
+                    }
+                },
+                datetime: {
+                    title: '📅 日時情報',
+                    fields: {
+                        'DateTime': '撮影日時',
+                        'DateTimeOriginal': '元画像作成日時',
+                        'DateTimeDigitized': 'デジタル化日時'
+                    }
+                },
+                location: {
+                    title: '📍 位置情報',
+                    fields: {
+                        'GPSLatitude': '緯度',
+                        'GPSLongitude': '経度',
+                        'GPSAltitude': '高度',
+                        'GPSLatitudeRef': '緯度基準',
+                        'GPSLongitudeRef': '経度基準'
+                    }
+                },
+                technical: {
+                    title: '🔧 技術情報',
+                    fields: {
+                        'ImageWidth': '画像幅',
+                        'ImageHeight': '画像高',
+                        'XResolution': '水平解像度',
+                        'YResolution': '垂直解像度',
+                        'ResolutionUnit': '解像度単位',
+                        'ColorSpace': 'カラースペース',
+                        'Orientation': '画像の向き'
+                    }
+                }
+            };
+
+            let content = '';
+
+            Object.entries(sections).forEach(([key, section]) => {
+                const sectionData = {};
+                Object.entries(section.fields).forEach(([exifKey, label]) => {
+                    if (exifData[exifKey] !== undefined) {
+                        sectionData[label] = formatExifValue(exifKey, exifData[exifKey]);
+                    }
+                });
+
+                if (Object.keys(sectionData).length > 0) {
+                    content += `<div class="exif-section">
+                        <h5>${section.title}</h5>
+                        <div class="exif-grid">`;
+                    
+                    Object.entries(sectionData).forEach(([label, value]) => {
+                        const isRisk = isPrivacyRisk(label);
+                        content += `<div class="exif-item">
+                            <span class="exif-key">${label}:</span>
+                            <span class="exif-value ${isRisk ? 'risk-high' : ''}">${value}</span>
+                        </div>`;
+                    });
+                    
+                    content += `</div></div>`;
+                }
+            });
+
+            exifContent.innerHTML = content;
+        }
+
+        function formatExifValue(key, value) {
+            if (key === 'ExposureTime') {
+                return value < 1 ? `1/${Math.round(1/value)}秒` : `${value}秒`;
+            }
+            if (key === 'FNumber') {
+                return `F${value}`;
+            }
+            if (key === 'ISO') {
+                return `ISO ${value}`;
+            }
+            if (key === 'FocalLength') {
+                return `${value}mm`;
+            }
+            if (key === 'GPSLatitude' || key === 'GPSLongitude') {
+                if (Array.isArray(value)) {
+                    const degrees = value[0] + value[1]/60 + value[2]/3600;
+                    return `${degrees.toFixed(6)}°`;
+                }
+            }
+            if (key === 'Flash') {
+                const flashModes = {
+                    0: 'フラッシュなし',
+                    1: 'フラッシュあり',
+                    5: 'フラッシュあり（赤目軽減なし）',
+                    7: 'フラッシュあり（赤目軽減あり）',
+                    16: 'フラッシュなし（強制）',
+                    24: 'フラッシュあり（自動）'
+                };
+                return flashModes[value] || `コード${value}`;
+            }
+            return String(value);
+        }
+
+        function isPrivacyRisk(label) {
+            const riskLabels = ['緯度', '経度', '高度', '撮影日時', '元画像作成日時', 'デジタル化日時', 'メーカー', '機種'];
+            return riskLabels.includes(label);
+        }
+
+        function evaluatePrivacyRisk(exifData) {
+            const risks = [];
+            
+            if (exifData.GPSLatitude || exifData.GPSLongitude) {
+                risks.push('📍位置情報');
+            }
+            if (exifData.DateTime || exifData.DateTimeOriginal) {
+                risks.push('📅撮影日時');
+            }
+            if (exifData.Make || exifData.Model) {
+                risks.push('📱機種情報');
+            }
+            if (exifData.Artist) {
+                risks.push('👤作者情報');
+            }
+            if (exifData.Copyright) {
+                risks.push('©️著作権情報');
+            }
+
+            if (risks.length > 0) {
+                privacyWarning.style.display = 'block';
+                warningText.innerHTML = `この画像には以下の個人情報が含まれています: <strong>${risks.join(', ')}</strong>`;
+            } else {
+                privacySafe.style.display = 'block';
+            }
+        }
+
         function removeExifData(file) {
             return new Promise((resolve, reject) => {
                 const canvas = document.createElement('canvas');
@@ -430,26 +719,21 @@
                 const img = new Image();
 
                 img.onload = function() {
-                    // キャンバスサイズを画像サイズに設定
                     canvas.width = img.naturalWidth;
                     canvas.height = img.naturalHeight;
-
-                    // 画像をキャンバスに描画（Exifデータは除去される）
                     ctx.drawImage(img, 0, 0);
 
-                    // キャンバスからBlobを生成
                     canvas.toBlob((blob) => {
                         if (blob) {
                             resolve(blob);
                         } else {
                             reject(new Error('画像の処理に失敗しました'));
                         }
-                    }, file.type, 0.95); // 95%品質で保存
+                    }, file.type, 0.95);
                 };
 
                 img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
 
-                // File を Data URL として読み込み
                 const reader = new FileReader();
                 reader.onload = (e) => img.src = e.target.result;
                 reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
@@ -528,7 +812,6 @@
         // ダウンロード処理
         downloadBtn.addEventListener('click', () => {
             if (processedFiles.length === 1) {
-                // 単一ファイルの場合
                 const file = processedFiles[0];
                 const url = URL.createObjectURL(file.processed);
                 const a = document.createElement('a');
@@ -539,7 +822,6 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             } else {
-                // 複数ファイルの場合は順次ダウンロード
                 processedFiles.forEach((file, index) => {
                     setTimeout(() => {
                         const url = URL.createObjectURL(file.processed);
@@ -550,7 +832,7 @@
                         a.click();
                         document.body.removeChild(a);
                         URL.revokeObjectURL(url);
-                    }, index * 500); // 500ms間隔でダウンロード
+                    }, index * 500);
                 });
             }
         });
