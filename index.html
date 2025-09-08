@@ -408,7 +408,7 @@
             <div class="feature">
                 <div class="feature-icon">🔒</div>
                 <h3>プライバシー保護</h3>
-                <p>位置情報、撮影日時、カメラ情報などの個人情報を完全に除去</p>
+                <p>撮影日時、カメラ情報などの個人情報を完全に除去</p>
             </div>
             <div class="feature">
                 <div class="feature-icon">⚡</div>
@@ -593,16 +593,6 @@
                         'DateTimeDigitized': 'デジタル化日時'
                     }
                 },
-                location: {
-                    title: '📍 位置情報',
-                    fields: {
-                        'GPSLatitude': '緯度',
-                        'GPSLongitude': '経度',
-                        'GPSAltitude': '高度',
-                        'GPSLatitudeRef': '緯度基準',
-                        'GPSLongitudeRef': '経度基準'
-                    }
-                },
                 technical: {
                     title: '🔧 技術情報',
                     fields: {
@@ -660,12 +650,6 @@
             if (key === 'FocalLength') {
                 return `${value}mm`;
             }
-            if (key === 'GPSLatitude' || key === 'GPSLongitude') {
-                if (Array.isArray(value)) {
-                    const degrees = value[0] + value[1]/60 + value[2]/3600;
-                    return `${degrees.toFixed(6)}°`;
-                }
-            }
             if (key === 'Flash') {
                 const flashModes = {
                     0: 'フラッシュなし',
@@ -681,16 +665,13 @@
         }
 
         function isPrivacyRisk(label) {
-            const riskLabels = ['緯度', '経度', '高度', '撮影日時', '元画像作成日時', 'デジタル化日時', 'メーカー', '機種'];
+            const riskLabels = ['撮影日時', '元画像作成日時', 'デジタル化日時', 'メーカー', '機種'];
             return riskLabels.includes(label);
         }
 
         function evaluatePrivacyRisk(exifData) {
             const risks = [];
             
-            if (exifData.GPSLatitude || exifData.GPSLongitude) {
-                risks.push('📍位置情報');
-            }
             if (exifData.DateTime || exifData.DateTimeOriginal) {
                 risks.push('📅撮影日時');
             }
