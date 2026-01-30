@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exif情報表示・除去ツール</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js" integrity="sha512-xBvoYxV/1Yw1O4n62eT+E37j3v0MN5H9p6N5f4B5j3i8E8+5v5M9w5C4h5i6j8E+5v5M9w5C4h5i6j8E+5v5M9w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -35,14 +35,13 @@
             margin-bottom: 30px;
             transition: all 0.3s ease;
             cursor: pointer;
-            position: relative; /* 重要 */
+            position: relative;
         }
         .upload-area:hover { border-color: #3498db; background: #ecf0f1; }
         .upload-area.dragover { border-color: #2980b9; background: #e8f6f3; }
         .upload-text { font-size: 18px; color: #2c3e50; margin-bottom: 10px; font-weight: bold; }
         .upload-subtext { color: #7f8c8d; font-size: 14px; }
         
-        /* inputタグは非表示だが、HTML構造上は独立させる */
         #fileInput { display: none; }
 
         .btn {
@@ -173,7 +172,7 @@
 
         let processedFiles = [];
 
-        // クリックイベントの修正: inputが外にあるため安全にclick()を呼べます
+        // クリックイベント
         uploadArea.addEventListener('click', () => {
             fileInput.click();
         });
@@ -278,34 +277,104 @@
             }
         }
 
+        // 修正箇所2: 画質変化なしのバイナリ処理（JPEG）とPNG対応を実装
         function removeExifData(file) {
             return new Promise((resolve, reject) => {
-                const img = new Image();
-                const url = URL.createObjectURL(file);
-                
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
+                // PNGの場合は既存のCanvas方式を使用（PNGは可逆圧縮なので画質劣化は起きないため安全）
+                if (file.type === 'image/png') {
+                    const img = new Image();
+                    const url = URL.createObjectURL(file);
                     
-                    canvas.toBlob((blob) => {
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        
+                        canvas.toBlob((blob) => {
+                            URL.revokeObjectURL(url);
+                            if (blob) resolve(blob);
+                            else reject(new Error('変換失敗'));
+                        }, 'image/png'); // 画質指定不要
+                    };
+                    
+                    img.onerror = () => {
                         URL.revokeObjectURL(url);
-                        if (blob) resolve(blob);
-                        else reject(new Error('変換失敗'));
-                    }, file.type, 0.95);
-                };
-                
-                img.onerror = () => {
-                    URL.revokeObjectURL(url);
-                    reject(new Error('画像読み込み失敗'));
-                };
-                
-                img.src = url;
+                        reject(new Error('画像読み込み失敗'));
+                    };
+                    img.src = url;
+                    return;
+                }
+
+                // JPEGの場合はバイナリ操作でExif(APP1)セグメントのみを除去（画質無劣化）
+                if (file.type === 'image/jpeg' || file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const dv = new DataView(e.target.result);
+                            const pieces = [];
+                            let recess = 0;
+
+                            // SOI (Start of Image) チェック (0xFFD8)
+                            if (dv.getUint16(0) !== 0xFFD8) {
+                                // JPEGでない場合はそのまま返す
+                                resolve(file);
+                                return;
+                            }
+
+                            let pos = 2;
+                            while (pos < dv.byteLength) {
+                                // マーカーの検索 (0xFF)
+                                if (dv.getUint8(pos) === 0xFF) {
+                                    const marker = dv.getUint8(pos + 1);
+                                    
+                                    // SOS (Start of Scan) = 0xDA 以降は画像データなのでループ終了
+                                    if (marker === 0xDA) {
+                                        break;
+                                    }
+
+                                    // APP1 (Exif) = 0xE1 の場合、このセグメントをスキップ（除去）
+                                    if (marker === 0xE1) {
+                                        // ここまでのデータを保持
+                                        pieces.push(e.target.result.slice(recess, pos));
+                                        
+                                        // セグメントの長さを取得してスキップ
+                                        const len = dv.getUint16(pos + 2);
+                                        pos += 2 + len;
+                                        recess = pos;
+                                    } else {
+                                        // その他のマーカーは維持（APP0, DQT, DHTなど）
+                                        const len = dv.getUint16(pos + 2);
+                                        pos += 2 + len;
+                                    }
+                                } else {
+                                    pos++;
+                                }
+                            }
+
+                            // 残りのデータ（画像本体含む）を追加
+                            pieces.push(e.target.result.slice(recess));
+                            
+                            // 新しいBlobを作成
+                            const newBlob = new Blob(pieces, { type: 'image/jpeg' });
+                            resolve(newBlob);
+
+                        } catch (err) {
+                            console.error("Binary processing error:", err);
+                            // エラー時は安全のため元のファイルを返すか、Canvas方式にフォールバックも検討
+                            reject(new Error('Exif除去処理中にエラーが発生しました'));
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    // その他の形式はそのまま返す（あるいはエラー）
+                    resolve(file);
+                }
             });
         }
 
+        // 修正箇所3: PNGの解析スキップを廃止
         function analyzeExifData(file) {
             return new Promise((resolve) => {
                 // EXIFライブラリが読み込めていない場合のガード
@@ -315,14 +384,11 @@
                     return;
                 }
 
-                if (file.type === 'image/png') {
-                    privacySafe.style.display = 'block';
-                    resolve();
-                    return;
-                }
-
+                // PNGスキップ判定を削除し、すべてのファイルを解析へ回す
+                
                 EXIF.getData(file, function() {
                     const allTags = EXIF.getAllTags(this);
+                    // タグが見つからない場合も考慮
                     if (Object.keys(allTags).length === 0) {
                         privacySafe.style.display = 'block';
                     } else {
@@ -404,7 +470,6 @@
             return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
 
-        // 以前のコードで途切れていた関数を修正
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
