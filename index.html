@@ -316,7 +316,7 @@
         <div class="upload-area" id="uploadArea">
             <div class="upload-text">画像をここにドラッグ&ドロップ</div>
             <div class="upload-subtext">またはクリックしてファイルを選択</div>
-            <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png" multiple>
+            <input type="file" id="fileInput" accept="image/jpeg, image/png, .jpg, .jpeg, .png" multiple>
         </div>
 
         <div class="progress" id="progress">
@@ -417,19 +417,32 @@
         fileInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
             handleFiles(files);
+            // 修正2: 同じファイルを連続で選択できるように値をリセット
+            fileInput.value = '';
         });
 
         function handleFiles(files) {
             if (files.length === 0) return;
 
-            const imageFiles = files.filter(file => 
-                file.type === 'image/jpeg' || 
-                file.type === 'image/jpg' || 
-                file.type === 'image/png'
-            );
+            // 修正3: MIMEタイプだけでなく、拡張子でも判定して許容範囲を広げる
+            const imageFiles = files.filter(file => {
+                const type = file.type.toLowerCase();
+                const name = file.name.toLowerCase();
+                
+                return (
+                    // MIMEタイプで判定
+                    type === 'image/jpeg' || 
+                    type === 'image/jpg' || 
+                    type === 'image/png' ||
+                    // 拡張子で判定（ブラウザがMIMEを認識できなかった場合の保険）
+                    name.endsWith('.jpg') || 
+                    name.endsWith('.jpeg') || 
+                    name.endsWith('.png')
+                );
+            });
 
             if (imageFiles.length === 0) {
-                showResult('対応している画像ファイル（JPEG、PNG）を選択してください。', true);
+                showResult('対応している画像ファイル（JPEG、PNG）が認識できませんでした。別のファイルをお試しください。', true);
                 return;
             }
 
@@ -538,7 +551,6 @@
             });
         }
 
-        // 途切れていた関数を補完
         function evaluatePrivacyRisk(exifData) {
             const riskKeys = [
                 'DateTime', 'DateTimeOriginal', 'GPSLatitude', 'GPSLongitude',
@@ -569,9 +581,6 @@
                 technical: { title: '技術情報', fields: ['ImageWidth', 'ImageHeight', 'Orientation'] }
             };
 
-            // セキュリティ対策: innerHTMLではなくDOM要素を生成して追加する方式に変更推奨だが、
-            // 構造維持のためinnerHTMLを使う場合はエスケープが必要。
-            // ここでは簡易的にテキストとして組み立てる
             let content = '';
 
             Object.entries(sections).forEach(([key, section]) => {
@@ -582,7 +591,6 @@
                     if (exifData[field] !== undefined) {
                         hasData = true;
                         const val = formatExifValue(field, exifData[field]);
-                        // 値をエスケープ処理（簡易的）
                         const safeVal = String(val).replace(/[<>&"']/g, ''); 
                         sectionHtml += `
                         <div class="exif-item">
@@ -636,8 +644,6 @@
             imagePreview.src = url;
             imagePreview.style.display = 'block';
             imagePreview.onload = () => {
-                // メモリリーク防止のためURL解放はonload後ではなく、次のファイル処理時や終了時に行うのが理想だが
-                // 簡易実装としてプレビュー維持のためここでは解放しない
             };
         }
 
@@ -648,9 +654,4 @@
         }
 
         function formatBytes(bytes, decimals = 2) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            re
+            if (bytes === 0) return '
