@@ -6,12 +6,7 @@
     <title>Exif情報表示・除去ツール</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
             background-color: #f5f5f5;
@@ -19,7 +14,6 @@
             min-height: 100vh;
             padding: 20px;
         }
-
         .container {
             max-width: 900px;
             margin: 0 auto;
@@ -28,22 +22,10 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             padding: 40px;
         }
-
-        h1 {
-            text-align: center;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            font-size: 24px;
-            font-weight: bold;
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 40px;
-            font-size: 14px;
-        }
-
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 10px; font-size: 24px; font-weight: bold; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 40px; font-size: 14px; }
+        
+        /* アップロードエリアのスタイル修正 */
         .upload-area {
             border: 2px dashed #bdc3c7;
             border-radius: 8px;
@@ -53,259 +35,58 @@
             margin-bottom: 30px;
             transition: all 0.3s ease;
             cursor: pointer;
+            position: relative; /* 重要 */
         }
-
-        .upload-area:hover {
-            border-color: #3498db;
-            background: #ecf0f1;
-        }
-
-        .upload-area.dragover {
-            border-color: #2980b9;
-            background: #e8f6f3;
-        }
-
-        .upload-text {
-            font-size: 18px;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            font-weight: bold;
-        }
-
-        .upload-subtext {
-            color: #7f8c8d;
-            font-size: 14px;
-        }
-
-        #fileInput {
-            display: none;
-        }
+        .upload-area:hover { border-color: #3498db; background: #ecf0f1; }
+        .upload-area.dragover { border-color: #2980b9; background: #e8f6f3; }
+        .upload-text { font-size: 18px; color: #2c3e50; margin-bottom: 10px; font-weight: bold; }
+        .upload-subtext { color: #7f8c8d; font-size: 14px; }
+        
+        /* inputタグは非表示だが、HTML構造上は独立させる */
+        #fileInput { display: none; }
 
         .btn {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 4px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.3s;
-            display: inline-block;
-            text-decoration: none;
-            margin: 5px;
+            background-color: #3498db; color: white; border: none; padding: 12px 24px;
+            border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer;
+            transition: background-color 0.3s; display: inline-block; text-decoration: none; margin: 5px;
         }
+        .btn:hover { background-color: #2980b9; }
+        .btn:disabled { background-color: #95a5a6; cursor: not-allowed; }
 
-        .btn:hover {
-            background-color: #2980b9;
-        }
+        .progress { width: 100%; height: 4px; background: #ecf0f1; margin: 20px 0; overflow: hidden; display: none; }
+        .progress-bar { height: 100%; background-color: #3498db; transition: width 0.3s ease; width: 0; }
 
-        .btn:disabled {
-            background-color: #95a5a6;
-            cursor: not-allowed;
-        }
+        .result { margin-top: 30px; padding: 15px; border-radius: 4px; background: #e8f6f3; border-left: 4px solid #2ecc71; display: none; }
+        .result.error { background: #fdedec; border-left-color: #e74c3c; }
 
-        .progress {
-            width: 100%;
-            height: 4px;
-            background: #ecf0f1;
-            margin: 20px 0;
-            overflow: hidden;
-            display: none;
-        }
+        .file-info, .exif-details { background: #fff; padding: 20px; border: 1px solid #eee; margin: 20px 0; display: none; border-radius: 4px; }
+        .file-info h4, .exif-details h4 { margin-bottom: 15px; color: #2c3e50; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+        
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .info-item { background: white; padding: 10px; border: 1px solid #eee; }
+        .info-label { font-weight: bold; color: #7f8c8d; font-size: 12px; display: block; margin-bottom: 4px; }
+        .info-value { color: #333; font-size: 14px; }
 
-        .progress-bar {
-            height: 100%;
-            background-color: #3498db;
-            transition: width 0.3s ease;
-            width: 0;
-        }
+        .privacy-warning { background: #fdedec; border: 1px solid #e74c3c; border-radius: 4px; padding: 15px; margin: 20px 0; display: none; }
+        .privacy-warning h4 { color: #c0392b; margin-bottom: 5px; font-size: 16px; }
+        .privacy-safe { background: #e8f6f3; border: 1px solid #2ecc71; border-radius: 4px; padding: 15px; margin: 20px 0; display: none; }
+        .privacy-safe h4 { color: #27ae60; margin-bottom: 5px; font-size: 16px; }
 
-        .result {
-            margin-top: 30px;
-            padding: 15px;
-            border-radius: 4px;
-            background: #e8f6f3;
-            border-left: 4px solid #2ecc71;
-            display: none;
-        }
-
-        .result.error {
-            background: #fdedec;
-            border-left-color: #e74c3c;
-        }
-
-        .file-info {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 4px;
-            margin: 20px 0;
-            display: none;
-            border: 1px solid #e1e4e8;
-        }
-
-        .file-info h4 {
-            margin-bottom: 15px;
-            color: #2c3e50;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 10px;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-        }
-
-        .info-item {
-            background: white;
-            padding: 10px;
-            border: 1px solid #eee;
-        }
-
-        .info-label {
-            font-weight: bold;
-            color: #7f8c8d;
-            font-size: 12px;
-            display: block;
-            margin-bottom: 4px;
-        }
-
-        .info-value {
-            color: #333;
-            font-size: 14px;
-        }
-
-        .risk-high {
-            color: #e74c3c !important;
-            font-weight: bold;
-        }
-
-        .privacy-warning {
-            background: #fdedec;
-            border: 1px solid #e74c3c;
-            border-radius: 4px;
-            padding: 15px;
-            margin: 20px 0;
-            display: none;
-        }
-
-        .privacy-warning h4 {
-            color: #c0392b;
-            margin-bottom: 5px;
-            font-size: 16px;
-        }
-
-        .privacy-safe {
-            background: #e8f6f3;
-            border: 1px solid #2ecc71;
-            border-radius: 4px;
-            padding: 15px;
-            margin: 20px 0;
-            display: none;
-        }
-
-        .privacy-safe h4 {
-            color: #27ae60;
-            margin-bottom: 5px;
-            font-size: 16px;
-        }
-
-        .exif-details {
-            background: #fff;
-            padding: 20px;
-            border: 1px solid #eee;
-            margin: 20px 0;
-            display: none;
-        }
-
-        .exif-section {
-            margin-bottom: 20px;
-        }
-
-        .exif-section h5 {
-            color: #2c3e50;
-            margin-bottom: 10px;
-            font-size: 14px;
-            border-bottom: 2px solid #3498db;
-            display: inline-block;
-        }
-
-        .exif-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .exif-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .exif-key {
-            font-weight: bold;
-            color: #555;
-            font-size: 13px;
-        }
-
-        .exif-value {
-            color: #333;
-            text-align: right;
-            font-size: 13px;
-            font-family: monospace;
-        }
-
-        .image-preview {
-            max-width: 100%;
-            max-height: 300px;
-            border: 1px solid #ddd;
-            margin: 20px 0;
-            display: none;
-            display: block;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .download-section {
-            text-align: center;
-            margin-top: 30px;
-            display: none;
-        }
-
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 40px 0;
-            border-top: 1px solid #eee;
-            padding-top: 40px;
-        }
-
-        .feature {
-            text-align: center;
-        }
-
-        .feature h3 {
-            margin-bottom: 10px;
-            color: #2c3e50;
-            font-size: 16px;
-        }
-
-        .feature p {
-            color: #666;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .github-link {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-        }
+        .exif-section { margin-bottom: 20px; }
+        .exif-section h5 { color: #2c3e50; margin-bottom: 10px; font-size: 14px; border-bottom: 2px solid #3498db; display: inline-block; }
+        .exif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-top: 10px; }
+        .exif-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+        .exif-key { font-weight: bold; color: #555; font-size: 13px; }
+        .exif-value { color: #333; text-align: right; font-size: 13px; font-family: monospace; }
+        
+        .image-preview { max-width: 100%; max-height: 300px; border: 1px solid #ddd; margin: 20px auto; display: none; }
+        .download-section { text-align: center; margin-top: 30px; display: none; }
+        
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 40px 0; border-top: 1px solid #eee; padding-top: 40px; }
+        .feature { text-align: center; }
+        .feature h3 { margin-bottom: 10px; color: #2c3e50; font-size: 16px; }
+        .feature p { color: #666; font-size: 13px; line-height: 1.5; }
+        .github-link { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; }
     </style>
 </head>
 <body>
@@ -316,8 +97,8 @@
         <div class="upload-area" id="uploadArea">
             <div class="upload-text">画像をここにドラッグ&ドロップ</div>
             <div class="upload-subtext">またはクリックしてファイルを選択</div>
-            <input type="file" id="fileInput" accept="image/jpeg, image/png, .jpg, .jpeg, .png" multiple>
         </div>
+        <input type="file" id="fileInput" accept="image/jpeg, image/png, .jpg, .jpeg, .png" multiple>
 
         <div class="progress" id="progress">
             <div class="progress-bar" id="progressBar"></div>
@@ -392,49 +173,52 @@
 
         let processedFiles = [];
 
-        // イベントリスナー設定
-        uploadArea.addEventListener('click', () => fileInput.click());
+        // クリックイベントの修正: inputが外にあるため安全にclick()を呼べます
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
         
+        // ドラッグ&ドロップの視覚効果
         ['dragover', 'dragenter'].forEach(eventName => {
             uploadArea.addEventListener(eventName, (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 uploadArea.classList.add('dragover');
             });
         });
 
         ['dragleave', 'dragend', 'drop'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, () => {
+            uploadArea.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 uploadArea.classList.remove('dragover');
             });
         });
 
+        // ドロップ時の処理
         uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
             const files = Array.from(e.dataTransfer.files);
             handleFiles(files);
         });
 
+        // ファイル選択時の処理
         fileInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
             handleFiles(files);
-            // 修正2: 同じファイルを連続で選択できるように値をリセット
-            fileInput.value = '';
+            fileInput.value = ''; // 連続選択可能にする
         });
 
         function handleFiles(files) {
             if (files.length === 0) return;
 
-            // 修正3: MIMEタイプだけでなく、拡張子でも判定して許容範囲を広げる
+            // 拡張子とMIMEタイプで柔軟に判定
             const imageFiles = files.filter(file => {
-                const type = file.type.toLowerCase();
                 const name = file.name.toLowerCase();
-                
+                const type = file.type.toLowerCase();
                 return (
-                    // MIMEタイプで判定
                     type === 'image/jpeg' || 
                     type === 'image/jpg' || 
                     type === 'image/png' ||
-                    // 拡張子で判定（ブラウザがMIMEを認識できなかった場合の保険）
                     name.endsWith('.jpg') || 
                     name.endsWith('.jpeg') || 
                     name.endsWith('.png')
@@ -442,7 +226,7 @@
             });
 
             if (imageFiles.length === 0) {
-                showResult('対応している画像ファイル（JPEG、PNG）が認識できませんでした。別のファイルをお試しください。', true);
+                alert('対応している画像ファイル（JPG, PNG）が認識できませんでした。');
                 return;
             }
 
@@ -458,13 +242,14 @@
             privacySafe.style.display = 'none';
             exifDetails.style.display = 'none';
             imagePreview.style.display = 'none';
+            exifContent.innerHTML = '';
 
             try {
                 for (let i = 0; i < files.length; i++) {
                     const file = files[i];
                     progressBar.style.width = `${((i + 1) / files.length) * 100}%`;
 
-                    // 1枚目の画像のみ詳細表示
+                    // 1枚目のみプレビューと解析表示
                     if (i === 0) {
                         showImagePreview(file);
                         showFileInfo(file);
@@ -479,12 +264,12 @@
                     });
                 }
 
-                showResult(`${files.length}個のファイルの処理が完了しました。ダウンロード可能です。`, false);
+                showResult(`${files.length}個のファイルの処理が完了しました。`, false);
                 downloadSection.style.display = 'block';
 
             } catch (error) {
                 console.error(error);
-                showResult(`処理中にエラーが発生しました: ${error.message}`, true);
+                showResult(`エラー: ${error.message}`, true);
             } finally {
                 setTimeout(() => {
                     progress.style.display = 'none';
@@ -493,7 +278,6 @@
             }
         }
 
-        // Exifデータを除去する関数（Canvasを使用して再描画することでメタデータを削除）
         function removeExifData(file) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
@@ -506,20 +290,16 @@
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0);
                     
-                    // 元の形式でBlob化（品質0.95）
                     canvas.toBlob((blob) => {
                         URL.revokeObjectURL(url);
-                        if (blob) {
-                            resolve(blob);
-                        } else {
-                            reject(new Error('画像の変換に失敗しました'));
-                        }
+                        if (blob) resolve(blob);
+                        else reject(new Error('変換失敗'));
                     }, file.type, 0.95);
                 };
                 
                 img.onerror = () => {
                     URL.revokeObjectURL(url);
-                    reject(new Error('画像の読み込みに失敗しました'));
+                    reject(new Error('画像読み込み失敗'));
                 };
                 
                 img.src = url;
@@ -528,8 +308,14 @@
 
         function analyzeExifData(file) {
             return new Promise((resolve) => {
+                // EXIFライブラリが読み込めていない場合のガード
+                if (typeof EXIF === 'undefined') {
+                    console.warn('EXIF library not loaded');
+                    resolve();
+                    return;
+                }
+
                 if (file.type === 'image/png') {
-                    // PNGはexif-jsで読めないことが多いが、Canvas再描画でメタデータは消えるため安全とする
                     privacySafe.style.display = 'block';
                     resolve();
                     return;
@@ -537,104 +323,66 @@
 
                 EXIF.getData(file, function() {
                     const allTags = EXIF.getAllTags(this);
-                    
                     if (Object.keys(allTags).length === 0) {
                         privacySafe.style.display = 'block';
-                        resolve();
-                        return;
+                    } else {
+                        displayExifInformation(allTags);
+                        evaluatePrivacyRisk(allTags);
                     }
-
-                    displayExifInformation(allTags);
-                    evaluatePrivacyRisk(allTags);
                     resolve();
                 });
             });
         }
 
         function evaluatePrivacyRisk(exifData) {
-            const riskKeys = [
-                'DateTime', 'DateTimeOriginal', 'GPSLatitude', 'GPSLongitude',
-                'Make', 'Model', 'Software'
-            ];
-            
+            const riskKeys = ['DateTime', 'DateTimeOriginal', 'GPSLatitude', 'Make', 'Model'];
             const foundRisks = riskKeys.filter(key => exifData[key] !== undefined);
 
             if (foundRisks.length > 0) {
                 privacyWarning.style.display = 'block';
-                // リスク内容をテキストで表示
-                const riskLabels = foundRisks.map(key => key).join(', ');
-                warningText.textContent = `検出された情報: ${riskLabels}`;
+                warningText.textContent = `検出された情報: ${foundRisks.join(', ')}`;
             } else {
                 privacySafe.style.display = 'block';
             }
         }
 
         function displayExifInformation(exifData) {
-            if (Object.keys(exifData).length === 0) return;
-
             exifDetails.style.display = 'block';
-
             const sections = {
-                camera: { title: 'カメラ情報', fields: ['Make', 'Model', 'Software', 'LensModel'] },
-                settings: { title: '撮影設定', fields: ['ExposureTime', 'FNumber', 'ISO', 'FocalLength', 'Flash'] },
-                datetime: { title: '日時情報', fields: ['DateTime', 'DateTimeOriginal'] },
-                technical: { title: '技術情報', fields: ['ImageWidth', 'ImageHeight', 'Orientation'] }
+                camera: { title: 'カメラ', fields: ['Make', 'Model', 'Software'] },
+                settings: { title: '設定', fields: ['ExposureTime', 'FNumber', 'ISO', 'FocalLength'] },
+                datetime: { title: '日時', fields: ['DateTime', 'DateTimeOriginal'] },
+                technical: { title: '技術', fields: ['ImageWidth', 'ImageHeight', 'Orientation'] }
             };
 
             let content = '';
-
             Object.entries(sections).forEach(([key, section]) => {
                 let sectionHtml = '';
-                let hasData = false;
-
                 section.fields.forEach(field => {
                     if (exifData[field] !== undefined) {
-                        hasData = true;
-                        const val = formatExifValue(field, exifData[field]);
-                        const safeVal = String(val).replace(/[<>&"']/g, ''); 
-                        sectionHtml += `
-                        <div class="exif-item">
-                            <span class="exif-key">${field}:</span>
-                            <span class="exif-value">${safeVal}</span>
-                        </div>`;
+                        let val = String(exifData[field]).replace(/[<>&"']/g, ''); 
+                        sectionHtml += `<div class="exif-item"><span class="exif-key">${field}:</span><span class="exif-value">${val}</span></div>`;
                     }
                 });
-
-                if (hasData) {
+                if (sectionHtml) {
                     content += `<div class="exif-section"><h5>${section.title}</h5><div class="exif-grid">${sectionHtml}</div></div>`;
                 }
             });
-
             exifContent.innerHTML = content;
-        }
-
-        function formatExifValue(key, value) {
-            if (key === 'ExposureTime') {
-                return value < 1 ? `1/${Math.round(1/value)}秒` : `${value}秒`;
-            }
-            if (key === 'FNumber') return `F${value}`;
-            if (key === 'ISO') return `ISO ${value}`;
-            if (key === 'FocalLength') return `${value}mm`;
-            return String(value);
         }
 
         function showFileInfo(file) {
             fileInfo.style.display = 'block';
             infoGrid.innerHTML = '';
-            
             const items = [
                 { label: 'ファイル名', value: file.name },
                 { label: 'サイズ', value: formatBytes(file.size) },
                 { label: '種類', value: file.type }
             ];
-
             items.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'info-item';
-                div.innerHTML = `
-                    <span class="info-label">${escapeHtml(item.label)}</span>
-                    <span class="info-value">${escapeHtml(item.value)}</span>
-                `;
+                div.innerHTML = `<span class="info-label">${escapeHtml(item.label)}</span><span class="info-value">${escapeHtml(item.value)}</span>`;
                 infoGrid.appendChild(div);
             });
         }
@@ -643,8 +391,6 @@
             const url = URL.createObjectURL(file);
             imagePreview.src = url;
             imagePreview.style.display = 'block';
-            imagePreview.onload = () => {
-            };
         }
 
         function showResult(message, isError) {
@@ -653,5 +399,33 @@
             result.style.display = 'block';
         }
 
+        function escapeHtml(text) {
+            if (!text) return text;
+            return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        // 以前のコードで途切れていた関数を修正
         function formatBytes(bytes, decimals = 2) {
-            if (bytes === 0) return '
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        downloadBtn.addEventListener('click', () => {
+            if (processedFiles.length === 0) return;
+            processedFiles.forEach(item => {
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(item.processed);
+                link.download = 'clean_' + item.name;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+            });
+        });
+    </script>
+</body>
+</html>
