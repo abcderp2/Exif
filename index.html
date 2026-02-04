@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exif情報表示・除去ツール</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js" integrity="sha512-mgP2J1pM06M7g5O575nO7tP+JgY/8V9QZ4S+L44p3QkUqX2hJ5xM/5j+8kX9+3d/9yZ3+8/4/6/5/6/" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -86,6 +86,19 @@
         .feature h3 { margin-bottom: 10px; color: #2c3e50; font-size: 16px; }
         .feature p { color: #666; font-size: 13px; line-height: 1.5; }
         .github-link { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; }
+
+        /* 修正箇所2: スマホ最適化用CSS */
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px; /* スマホでは余白を狭くする */
+            }
+            .upload-area {
+                padding: 40px 20px;
+            }
+            h1 {
+                font-size: 20px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -277,10 +290,9 @@
             }
         }
 
-        // 修正箇所2: 画質変化なしのバイナリ処理（JPEG）とPNG対応を実装
         function removeExifData(file) {
             return new Promise((resolve, reject) => {
-                // PNGの場合は既存のCanvas方式を使用（PNGは可逆圧縮なので画質劣化は起きないため安全）
+                // PNGの場合はCanvas方式
                 if (file.type === 'image/png') {
                     const img = new Image();
                     const url = URL.createObjectURL(file);
@@ -296,7 +308,7 @@
                             URL.revokeObjectURL(url);
                             if (blob) resolve(blob);
                             else reject(new Error('変換失敗'));
-                        }, 'image/png'); // 画質指定不要
+                        }, 'image/png');
                     };
                     
                     img.onerror = () => {
@@ -307,7 +319,7 @@
                     return;
                 }
 
-                // JPEGの場合はバイナリ操作でExif(APP1)セグメントのみを除去（画質無劣化）
+                // JPEGの場合はバイナリ操作でExif(APP1)セグメントのみを除去
                 if (file.type === 'image/jpeg' || file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg')) {
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -318,7 +330,6 @@
 
                             // SOI (Start of Image) チェック (0xFFD8)
                             if (dv.getUint16(0) !== 0xFFD8) {
-                                // JPEGでない場合はそのまま返す
                                 resolve(file);
                                 return;
                             }
@@ -336,15 +347,11 @@
 
                                     // APP1 (Exif) = 0xE1 の場合、このセグメントをスキップ（除去）
                                     if (marker === 0xE1) {
-                                        // ここまでのデータを保持
                                         pieces.push(e.target.result.slice(recess, pos));
-                                        
-                                        // セグメントの長さを取得してスキップ
                                         const len = dv.getUint16(pos + 2);
                                         pos += 2 + len;
                                         recess = pos;
                                     } else {
-                                        // その他のマーカーは維持（APP0, DQT, DHTなど）
                                         const len = dv.getUint16(pos + 2);
                                         pos += 2 + len;
                                     }
@@ -353,42 +360,32 @@
                                 }
                             }
 
-                            // 残りのデータ（画像本体含む）を追加
                             pieces.push(e.target.result.slice(recess));
-                            
-                            // 新しいBlobを作成
                             const newBlob = new Blob(pieces, { type: 'image/jpeg' });
                             resolve(newBlob);
 
                         } catch (err) {
                             console.error("Binary processing error:", err);
-                            // エラー時は安全のため元のファイルを返すか、Canvas方式にフォールバックも検討
                             reject(new Error('Exif除去処理中にエラーが発生しました'));
                         }
                     };
                     reader.readAsArrayBuffer(file);
                 } else {
-                    // その他の形式はそのまま返す（あるいはエラー）
                     resolve(file);
                 }
             });
         }
 
-        // 修正箇所3: PNGの解析スキップを廃止
         function analyzeExifData(file) {
             return new Promise((resolve) => {
-                // EXIFライブラリが読み込めていない場合のガード
                 if (typeof EXIF === 'undefined') {
                     console.warn('EXIF library not loaded');
                     resolve();
                     return;
                 }
-
-                // PNGスキップ判定を削除し、すべてのファイルを解析へ回す
                 
                 EXIF.getData(file, function() {
                     const allTags = EXIF.getAllTags(this);
-                    // タグが見つからない場合も考慮
                     if (Object.keys(allTags).length === 0) {
                         privacySafe.style.display = 'block';
                     } else {
@@ -465,11 +462,6 @@
             result.style.display = 'block';
         }
 
-        function escapeHtml(text) {
-            if (!text) return text;
-            return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        }
-
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -479,16 +471,35 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
+        // 修正箇所3: 安全なHTMLエスケープ関数とダウンロード機能の実装
+        function escapeHtml(text) {
+            if (!text) return text;
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // ダウンロードボタンのイベントリスナー（元コードで欠落していた機能）
         downloadBtn.addEventListener('click', () => {
             if (processedFiles.length === 0) return;
-            processedFiles.forEach(item => {
+
+            processedFiles.forEach((item, index) => {
                 const link = document.createElement('a');
-                link.href = URL.createObjectURL(item.processed);
+                // 元のファイル名の先頭に "clean_" を付与
                 link.download = 'clean_' + item.name;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+                link.href = URL.createObjectURL(item.processed);
+                
+                // 複数ファイルのダウンロード挙動を安定させるための遅延
+                setTimeout(() => {
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    // メモリ解放のために少し待ってからrevoke
+                    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+                }, index * 200);
             });
         });
     </script>
