@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>Exif情報表示・除去ツール</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js"></script>
     <style>
@@ -25,7 +26,6 @@
         h1 { text-align: center; color: #2c3e50; margin-bottom: 10px; font-size: 24px; font-weight: bold; }
         .subtitle { text-align: center; color: #666; margin-bottom: 40px; font-size: 14px; }
         
-        /* アップロードエリアのスタイル修正 */
         .upload-area {
             border: 2px dashed #bdc3c7;
             border-radius: 8px;
@@ -39,6 +39,7 @@
         }
         .upload-area:hover { border-color: #3498db; background: #ecf0f1; }
         .upload-area.dragover { border-color: #2980b9; background: #e8f6f3; }
+        .upload-area.disabled { opacity: 0.6; cursor: not-allowed; }
         .upload-text { font-size: 18px; color: #2c3e50; margin-bottom: 10px; font-weight: bold; }
         .upload-subtext { color: #7f8c8d; font-size: 14px; }
         
@@ -51,9 +52,14 @@
         }
         .btn:hover { background-color: #2980b9; }
         .btn:disabled { background-color: #95a5a6; cursor: not-allowed; }
+        .btn.danger { background-color: #e74c3c; }
+        .btn.danger:hover { background-color: #c0392b; }
+
+        .button-group { text-align: center; margin: 20px 0; }
 
         .progress { width: 100%; height: 4px; background: #ecf0f1; margin: 20px 0; overflow: hidden; display: none; }
         .progress-bar { height: 100%; background-color: #3498db; transition: width 0.3s ease; width: 0; }
+        .progress-text { text-align: center; margin-top: 10px; font-size: 14px; color: #666; display: none; }
 
         .result { margin-top: 30px; padding: 15px; border-radius: 4px; background: #e8f6f3; border-left: 4px solid #2ecc71; display: none; }
         .result.error { background: #fdedec; border-left-color: #e74c3c; }
@@ -64,7 +70,7 @@
         .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
         .info-item { background: white; padding: 10px; border: 1px solid #eee; }
         .info-label { font-weight: bold; color: #7f8c8d; font-size: 12px; display: block; margin-bottom: 4px; }
-        .info-value { color: #333; font-size: 14px; }
+        .info-value { color: #333; font-size: 14px; word-break: break-all; }
 
         .privacy-warning { background: #fdedec; border: 1px solid #e74c3c; border-radius: 4px; padding: 15px; margin: 20px 0; display: none; }
         .privacy-warning h4 { color: #c0392b; margin-bottom: 5px; font-size: 16px; }
@@ -76,10 +82,16 @@
         .exif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-top: 10px; }
         .exif-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
         .exif-key { font-weight: bold; color: #555; font-size: 13px; }
-        .exif-value { color: #333; text-align: right; font-size: 13px; font-family: monospace; }
+        .exif-value { color: #333; text-align: right; font-size: 13px; font-family: monospace; word-break: break-all; }
         
         .image-preview { max-width: 100%; max-height: 300px; border: 1px solid #ddd; margin: 20px auto; display: none; }
         .download-section { text-align: center; margin-top: 30px; display: none; }
+        
+        .processed-files-list { margin: 20px 0; }
+        .processed-files-list h4 { color: #2c3e50; margin-bottom: 10px; }
+        .processed-file-item { background: #f9f9f9; padding: 10px; margin: 5px 0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .processed-file-name { flex: 1; }
+        .processed-file-btn { margin-left: 10px; }
         
         .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 40px 0; border-top: 1px solid #eee; padding-top: 40px; }
         .feature { text-align: center; }
@@ -87,17 +99,12 @@
         .feature p { color: #666; font-size: 13px; line-height: 1.5; }
         .github-link { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; }
 
-        /* 修正箇所2: スマホ最適化用CSS */
         @media (max-width: 600px) {
-            .container {
-                padding: 20px; /* スマホでは余白を狭くする */
-            }
-            .upload-area {
-                padding: 40px 20px;
-            }
-            h1 {
-                font-size: 20px;
-            }
+            .container { padding: 20px; }
+            .upload-area { padding: 40px 20px; }
+            h1 { font-size: 20px; }
+            .processed-file-item { flex-direction: column; align-items: flex-start; }
+            .processed-file-btn { margin-left: 0; margin-top: 10px; }
         }
     </style>
 </head>
@@ -108,12 +115,13 @@
 
         <div class="upload-area" id="uploadArea">
             <div class="upload-text">画像をここにドラッグ&ドロップ</div>
-            <div class="upload-subtext">またはクリックしてファイルを選択</div>
+            <div class="upload-subtext">またはクリックしてファイルを選択（最大50MB、JPG/PNG）</div>
         </div>
         <input type="file" id="fileInput" accept="image/jpeg, image/png, .jpg, .jpeg, .png" multiple>
 
         <div class="progress" id="progress">
             <div class="progress-bar" id="progressBar"></div>
+            <div class="progress-text" id="progressText"></div>
         </div>
 
         <div class="privacy-warning" id="privacyWarning">
@@ -140,8 +148,16 @@
 
         <div class="result" id="result"></div>
 
+        <div class="processed-files-list" id="processedFilesList">
+            <h4>処理済みファイル</h4>
+            <div id="processedFilesContainer"></div>
+        </div>
+
         <div class="download-section" id="downloadSection">
-            <button class="btn" id="downloadBtn">Exif除去済み画像を保存</button>
+            <div class="button-group">
+                <button class="btn" id="downloadAllBtn">全て一括ダウンロード</button>
+                <button class="btn danger" id="clearBtn">リセット</button>
+            </div>
         </div>
 
         <div class="features">
@@ -167,10 +183,16 @@
     </div>
 
     <script>
+        // 設定
+        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+        const SUPPORTED_TYPES = ['image/jpeg', 'image/png'];
+
+        // DOM要素
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const progress = document.getElementById('progress');
         const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
         const result = document.getElementById('result');
         const fileInfo = document.getElementById('fileInfo');
         const infoGrid = document.getElementById('infoGrid');
@@ -181,21 +203,25 @@
         const warningText = document.getElementById('warningText');
         const imagePreview = document.getElementById('imagePreview');
         const downloadSection = document.getElementById('downloadSection');
-        const downloadBtn = document.getElementById('downloadBtn');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const processedFilesList = document.getElementById('processedFilesList');
+        const processedFilesContainer = document.getElementById('processedFilesContainer');
 
         let processedFiles = [];
+        let isProcessing = false;
+        let abortSignal = null;
 
-        // クリックイベント
+        // イベントリスナー設定
         uploadArea.addEventListener('click', () => {
-            fileInput.click();
+            if (!isProcessing) fileInput.click();
         });
         
-        // ドラッグ&ドロップの視覚効果
         ['dragover', 'dragenter'].forEach(eventName => {
             uploadArea.addEventListener(eventName, (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                uploadArea.classList.add('dragover');
+                if (!isProcessing) uploadArea.classList.add('dragover');
             });
         });
 
@@ -207,61 +233,71 @@
             });
         });
 
-        // ドロップ時の処理
         uploadArea.addEventListener('drop', (e) => {
             const files = Array.from(e.dataTransfer.files);
             handleFiles(files);
         });
 
-        // ファイル選択時の処理
         fileInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
             handleFiles(files);
-            fileInput.value = ''; // 連続選択可能にする
+            fileInput.value = '';
         });
 
+        downloadAllBtn.addEventListener('click', downloadAll);
+        clearBtn.addEventListener('click', clearAll);
+
+        // ファイル判定と処理
         function handleFiles(files) {
-            if (files.length === 0) return;
-
-            // 拡張子とMIMEタイプで柔軟に判定
-            const imageFiles = files.filter(file => {
-                const name = file.name.toLowerCase();
-                const type = file.type.toLowerCase();
-                return (
-                    type === 'image/jpeg' || 
-                    type === 'image/jpg' || 
-                    type === 'image/png' ||
-                    name.endsWith('.jpg') || 
-                    name.endsWith('.jpeg') || 
-                    name.endsWith('.png')
-                );
-            });
-
-            if (imageFiles.length === 0) {
-                alert('対応している画像ファイル（JPG, PNG）が認識できませんでした。');
+            if (isProcessing) {
+                showResult('処理中です。お待ちください。', true);
                 return;
             }
 
-            processFiles(imageFiles);
+            if (files.length === 0) return;
+
+            const validFiles = files.filter(file => {
+                const isCorrectType = SUPPORTED_TYPES.includes(file.type) || 
+                    /\.(jpg|jpeg|png)$/i.test(file.name);
+                const isSizeOk = file.size <= MAX_FILE_SIZE;
+
+                if (!isCorrectType) {
+                    showResult(`${file.name}は対応形式ではありません（JPG、PNG）`, true);
+                    return false;
+                }
+                if (!isSizeOk) {
+                    showResult(`${file.name}は50MBを超えています`, true);
+                    return false;
+                }
+                return true;
+            });
+
+            if (validFiles.length > 0) {
+                processFiles(validFiles);
+            }
         }
 
         async function processFiles(files) {
-            processedFiles = [];
+            isProcessing = true;
+            uploadArea.classList.add('disabled');
             progress.style.display = 'block';
+            progressText.style.display = 'block';
             result.style.display = 'none';
             downloadSection.style.display = 'none';
             privacyWarning.style.display = 'none';
             privacySafe.style.display = 'none';
             exifDetails.style.display = 'none';
             imagePreview.style.display = 'none';
+            processedFilesList.style.display = 'none';
             exifContent.innerHTML = '';
 
             try {
                 for (let i = 0; i < files.length; i++) {
                     const file = files[i];
-                    progressBar.style.width = `${((i + 1) / files.length) * 100}%`;
+                    const percent = Math.round(((i + 1) / files.length) * 100);
+                    progressBar.style.width = `${percent}%`;
+                    progressText.textContent = `${i + 1}/${files.length} 処理中...`;
 
-                    // 1枚目のみプレビューと解析表示
                     if (i === 0) {
                         showImagePreview(file);
                         showFileInfo(file);
@@ -276,51 +312,64 @@
                     });
                 }
 
+                displayProcessedFiles();
                 showResult(`${files.length}個のファイルの処理が完了しました。`, false);
                 downloadSection.style.display = 'block';
+                processedFilesList.style.display = 'block';
 
             } catch (error) {
                 console.error(error);
                 showResult(`エラー: ${error.message}`, true);
             } finally {
+                isProcessing = false;
+                uploadArea.classList.remove('disabled');
                 setTimeout(() => {
                     progress.style.display = 'none';
+                    progressText.style.display = 'none';
                     progressBar.style.width = '0';
                 }, 500);
             }
         }
 
+        // Exif除去処理
         function removeExifData(file) {
             return new Promise((resolve, reject) => {
-                // PNGの場合はCanvas方式
                 if (file.type === 'image/png') {
                     const img = new Image();
                     const url = URL.createObjectURL(file);
                     
                     img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0);
-                        
-                        canvas.toBlob((blob) => {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            
+                            canvas.toBlob((blob) => {
+                                URL.revokeObjectURL(url);
+                                if (blob) {
+                                    resolve(blob);
+                                } else {
+                                    reject(new Error('PNG変換失敗'));
+                                }
+                            }, 'image/png');
+                        } catch (err) {
                             URL.revokeObjectURL(url);
-                            if (blob) resolve(blob);
-                            else reject(new Error('変換失敗'));
-                        }, 'image/png');
+                            reject(new Error('PNG処理エラー: ' + err.message));
+                        }
                     };
                     
                     img.onerror = () => {
                         URL.revokeObjectURL(url);
                         reject(new Error('画像読み込み失敗'));
                     };
+
                     img.src = url;
                     return;
                 }
 
-                // JPEGの場合はバイナリ操作でExif(APP1)セグメントのみを除去
-                if (file.type === 'image/jpeg' || file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg')) {
+                if (file.type === 'image/jpeg' || /\.jpe?g$/i.test(file.name)) {
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
@@ -328,7 +377,6 @@
                             const pieces = [];
                             let recess = 0;
 
-                            // SOI (Start of Image) チェック (0xFFD8)
                             if (dv.getUint16(0) !== 0xFFD8) {
                                 resolve(file);
                                 return;
@@ -336,16 +384,11 @@
 
                             let pos = 2;
                             while (pos < dv.byteLength) {
-                                // マーカーの検索 (0xFF)
                                 if (dv.getUint8(pos) === 0xFF) {
                                     const marker = dv.getUint8(pos + 1);
                                     
-                                    // SOS (Start of Scan) = 0xDA 以降は画像データなのでループ終了
-                                    if (marker === 0xDA) {
-                                        break;
-                                    }
+                                    if (marker === 0xDA) break;
 
-                                    // APP1 (Exif) = 0xE1 の場合、このセグメントをスキップ（除去）
                                     if (marker === 0xE1) {
                                         pieces.push(e.target.result.slice(recess, pos));
                                         const len = dv.getUint16(pos + 2);
@@ -365,10 +408,15 @@
                             resolve(newBlob);
 
                         } catch (err) {
-                            console.error("Binary processing error:", err);
-                            reject(new Error('Exif除去処理中にエラーが発生しました'));
+                            console.error("JPEG処理エラー:", err);
+                            reject(new Error('JPEG処理エラー: ' + err.message));
                         }
                     };
+                    
+                    reader.onerror = () => {
+                        reject(new Error('ファイル読み込み失敗'));
+                    };
+                    
                     reader.readAsArrayBuffer(file);
                 } else {
                     resolve(file);
@@ -376,10 +424,11 @@
             });
         }
 
+        // Exif解析
         function analyzeExifData(file) {
             return new Promise((resolve) => {
                 if (typeof EXIF === 'undefined') {
-                    console.warn('EXIF library not loaded');
+                    console.warn('EXIFライブラリが読み込まれていません');
                     resolve();
                     return;
                 }
@@ -423,12 +472,12 @@
                 let sectionHtml = '';
                 section.fields.forEach(field => {
                     if (exifData[field] !== undefined) {
-                        let val = String(exifData[field]).replace(/[<>&"']/g, ''); 
-                        sectionHtml += `<div class="exif-item"><span class="exif-key">${field}:</span><span class="exif-value">${val}</span></div>`;
+                        const val = escapeHtml(String(exifData[field]));
+                        sectionHtml += `<div class="exif-item"><span class="exif-key">${escapeHtml(field)}:</span><span class="exif-value">${val}</span></div>`;
                     }
                 });
                 if (sectionHtml) {
-                    content += `<div class="exif-section"><h5>${section.title}</h5><div class="exif-grid">${sectionHtml}</div></div>`;
+                    content += `<div class="exif-section"><h5>${escapeHtml(section.title)}</h5><div class="exif-grid">${sectionHtml}</div></div>`;
                 }
             });
             exifContent.innerHTML = content;
@@ -440,7 +489,7 @@
             const items = [
                 { label: 'ファイル名', value: file.name },
                 { label: 'サイズ', value: formatBytes(file.size) },
-                { label: '種類', value: file.type }
+                { label: '種類', value: file.type || '不明' }
             ];
             items.forEach(item => {
                 const div = document.createElement('div');
@@ -471,36 +520,90 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        // 修正箇所3: 安全なHTMLエスケープ関数とダウンロード機能の実装
+        // XSS対策：安全なHTMLエスケープ
         function escapeHtml(text) {
-            if (!text) return text;
-            return String(text)
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
+            if (!text) return '';
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, char => map[char]);
         }
 
-        // ダウンロードボタンのイベントリスナー（元コードで欠落していた機能）
-        downloadBtn.addEventListener('click', () => {
-            if (processedFiles.length === 0) return;
+        // ダウンロード機能
+        function downloadAll() {
+            if (processedFiles.length === 0) {
+                showResult('ダウンロード対象のファイルがありません', true);
+                return;
+            }
 
-            processedFiles.forEach((item, index) => {
-                const link = document.createElement('a');
-                // 元のファイル名の先頭に "clean_" を付与
-                link.download = 'clean_' + item.name;
-                link.href = URL.createObjectURL(item.processed);
-                
-                // 複数ファイルのダウンロード挙動を安定させるための遅延
-                setTimeout(() => {
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    // メモリ解放のために少し待ってからrevoke
-                    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-                }, index * 200);
+            processedFiles.forEach(fileData => {
+                downloadSingle(fileData);
             });
+        }
+
+        function downloadSingle(fileData) {
+            const url = URL.createObjectURL(fileData.processed);
+            const link = document.createElement('a');
+            const nameWithoutExt = fileData.name.replace(/\.[^.]+$/, '');
+            const ext = fileData.name.match(/\.[^.]+$/) ? fileData.name.match(/\.[^.]+$/)[0] : '.jpg';
+            link.href = url;
+            link.download = `${nameWithoutExt}_exif_removed${ext}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function displayProcessedFiles() {
+            processedFilesContainer.innerHTML = '';
+            processedFiles.forEach((fileData, index) => {
+                const item = document.createElement('div');
+                item.className = 'processed-file-item';
+                item.innerHTML = `
+                    <span class="processed-file-name">${escapeHtml(fileData.name)}</span>
+                    <button class="btn processed-file-btn" data-index="${index}">ダウンロード</button>
+                `;
+                item.querySelector('button').addEventListener('click', () => {
+                    downloadSingle(fileData);
+                });
+                processedFilesContainer.appendChild(item);
+            });
+        }
+
+        function clearAll() {
+            processedFiles.forEach(fileData => {
+                fileData.processed = null;
+                fileData.original = null;
+            });
+            processedFiles = [];
+            
+            fileInput.value = '';
+            progress.style.display = 'none';
+            result.style.display = 'none';
+            downloadSection.style.display = 'none';
+            privacyWarning.style.display = 'none';
+            privacySafe.style.display = 'none';
+            exifDetails.style.display = 'none';
+            imagePreview.style.display = 'none';
+            fileInfo.style.display = 'none';
+            processedFilesList.style.display = 'none';
+            processedFilesContainer.innerHTML = '';
+            progressBar.style.width = '0';
+            
+            showResult('リセットしました', false);
+        }
+
+        // メモリ管理：定期的にガベージコレクション
+        window.addEventListener('beforeunload', () => {
+            processedFiles.forEach(fileData => {
+                fileData.processed = null;
+                fileData.original = null;
+            });
+            processedFiles = [];
         });
     </script>
 </body>
