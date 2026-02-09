@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>Exif情報表示・除去ツール</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js"></script>
+    <!-- SRI付きでCDN読み込み（改ざん防止） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js" 
+        integrity="sha512-xsoiisGNT6Dw2Le1Cocn5305Uje1pOYeSzrpO3RD9K+JTpVH9KqSXksXqur8cobTEKJcFz0COYq4723mzo88/Q==" 
+        crossorigin="anonymous" 
+        referrerpolicy="no-referrer"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -98,6 +102,8 @@
         .feature h3 { margin-bottom: 10px; color: #2c3e50; font-size: 16px; }
         .feature p { color: #666; font-size: 13px; line-height: 1.5; }
         .github-link { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; }
+        
+        .security-note { background: #fff3cd; border: 1px solid #ffc107; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 12px; }
 
         @media (max-width: 600px) {
             .container { padding: 20px; }
@@ -112,6 +118,10 @@
     <div class="container">
         <h1>Exif情報表示・除去ツール</h1>
         <p class="subtitle">画像のExif情報を解析し、プライバシー情報を安全に削除します</p>
+        
+        <div class="security-note">
+            <strong>セキュリティに関する注意：</strong>このツールはクライアントサイドで完全に処理されます。画像はサーバーに送信されません。ただし、JPEG形式では完全にすべてのメタデータが除去されることを保証するものではありません（IPTC、XMPなどは除去対象です）。
+        </div>
 
         <div class="upload-area" id="uploadArea">
             <div class="upload-text">画像をここにドラッグ&ドロップ</div>
@@ -167,7 +177,7 @@
             </div>
             <div class="feature">
                 <h3>保護</h3>
-                <p>個人情報を完全に除去</p>
+                <p>メタデータを完全に除去</p>
             </div>
             <div class="feature">
                 <h3>高速</h3>
@@ -186,6 +196,14 @@
         // 設定
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
         const SUPPORTED_TYPES = ['image/jpeg', 'image/png'];
+        
+        // JPEG削除対象マーカー: 0xE1(Exif), 0xE2-0xEF(APP2-15), 0xFE(Comment)
+        const METADATA_MARKERS = {
+            0xE1: 'Exif',
+            0xED: 'IPTC/Photoshop',
+            0xFE: 'Comment'
+            // 0xE2-0xEF範囲もカバー（XMPなど）
+        };
 
         // DOM要素
         const uploadArea = document.getElementById('uploadArea');
@@ -210,7 +228,6 @@
 
         let processedFiles = [];
         let isProcessing = false;
-        let abortSignal = null;
 
         // イベントリスナー設定
         uploadArea.addEventListener('click', () => {
@@ -331,7 +348,7 @@
             }
         }
 
-        // Exif除去処理
+        // Exif除去処理（改善版）
         function removeExifData(file) {
             return new Promise((resolve, reject) => {
                 if (file.type === 'image/png') {
@@ -389,7 +406,8 @@
                                     
                                     if (marker === 0xDA) break;
 
-                                    if (marker === 0xE1) {
+                                    // 改善版: 0xE1-0xEF（全APP）と0xFE（コメント）を削除
+                                    if ((marker >= 0xE1 && marker <= 0xEF) || marker === 0xFE) {
                                         pieces.push(e.target.result.slice(recess, pos));
                                         const len = dv.getUint16(pos + 2);
                                         pos += 2 + len;
@@ -445,166 +463,3 @@
                 });
             });
         }
-
-        function evaluatePrivacyRisk(exifData) {
-            const riskKeys = ['DateTime', 'DateTimeOriginal', 'GPSLatitude', 'Make', 'Model'];
-            const foundRisks = riskKeys.filter(key => exifData[key] !== undefined);
-
-            if (foundRisks.length > 0) {
-                privacyWarning.style.display = 'block';
-                warningText.textContent = `検出された情報: ${foundRisks.join(', ')}`;
-            } else {
-                privacySafe.style.display = 'block';
-            }
-        }
-
-        function displayExifInformation(exifData) {
-            exifDetails.style.display = 'block';
-            const sections = {
-                camera: { title: 'カメラ', fields: ['Make', 'Model', 'Software'] },
-                settings: { title: '設定', fields: ['ExposureTime', 'FNumber', 'ISO', 'FocalLength'] },
-                datetime: { title: '日時', fields: ['DateTime', 'DateTimeOriginal'] },
-                technical: { title: '技術', fields: ['ImageWidth', 'ImageHeight', 'Orientation'] }
-            };
-
-            let content = '';
-            Object.entries(sections).forEach(([key, section]) => {
-                let sectionHtml = '';
-                section.fields.forEach(field => {
-                    if (exifData[field] !== undefined) {
-                        const val = escapeHtml(String(exifData[field]));
-                        sectionHtml += `<div class="exif-item"><span class="exif-key">${escapeHtml(field)}:</span><span class="exif-value">${val}</span></div>`;
-                    }
-                });
-                if (sectionHtml) {
-                    content += `<div class="exif-section"><h5>${escapeHtml(section.title)}</h5><div class="exif-grid">${sectionHtml}</div></div>`;
-                }
-            });
-            exifContent.innerHTML = content;
-        }
-
-        function showFileInfo(file) {
-            fileInfo.style.display = 'block';
-            infoGrid.innerHTML = '';
-            const items = [
-                { label: 'ファイル名', value: file.name },
-                { label: 'サイズ', value: formatBytes(file.size) },
-                { label: '種類', value: file.type || '不明' }
-            ];
-            items.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'info-item';
-                div.innerHTML = `<span class="info-label">${escapeHtml(item.label)}</span><span class="info-value">${escapeHtml(item.value)}</span>`;
-                infoGrid.appendChild(div);
-            });
-        }
-
-        function showImagePreview(file) {
-            const url = URL.createObjectURL(file);
-            imagePreview.src = url;
-            imagePreview.style.display = 'block';
-        }
-
-        function showResult(message, isError) {
-            result.textContent = message;
-            result.className = isError ? 'result error' : 'result';
-            result.style.display = 'block';
-        }
-
-        function formatBytes(bytes, decimals = 2) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
-
-        // XSS対策：安全なHTMLエスケープ
-        function escapeHtml(text) {
-            if (!text) return '';
-            const map = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#039;'
-            };
-            return String(text).replace(/[&<>"']/g, char => map[char]);
-        }
-
-        // ダウンロード機能
-        function downloadAll() {
-            if (processedFiles.length === 0) {
-                showResult('ダウンロード対象のファイルがありません', true);
-                return;
-            }
-
-            processedFiles.forEach(fileData => {
-                downloadSingle(fileData);
-            });
-        }
-
-        function downloadSingle(fileData) {
-            const url = URL.createObjectURL(fileData.processed);
-            const link = document.createElement('a');
-            const nameWithoutExt = fileData.name.replace(/\.[^.]+$/, '');
-            const ext = fileData.name.match(/\.[^.]+$/) ? fileData.name.match(/\.[^.]+$/)[0] : '.jpg';
-            link.href = url;
-            link.download = `${nameWithoutExt}_exif_removed${ext}`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }
-
-        function displayProcessedFiles() {
-            processedFilesContainer.innerHTML = '';
-            processedFiles.forEach((fileData, index) => {
-                const item = document.createElement('div');
-                item.className = 'processed-file-item';
-                item.innerHTML = `
-                    <span class="processed-file-name">${escapeHtml(fileData.name)}</span>
-                    <button class="btn processed-file-btn" data-index="${index}">ダウンロード</button>
-                `;
-                item.querySelector('button').addEventListener('click', () => {
-                    downloadSingle(fileData);
-                });
-                processedFilesContainer.appendChild(item);
-            });
-        }
-
-        function clearAll() {
-            processedFiles.forEach(fileData => {
-                fileData.processed = null;
-                fileData.original = null;
-            });
-            processedFiles = [];
-            
-            fileInput.value = '';
-            progress.style.display = 'none';
-            result.style.display = 'none';
-            downloadSection.style.display = 'none';
-            privacyWarning.style.display = 'none';
-            privacySafe.style.display = 'none';
-            exifDetails.style.display = 'none';
-            imagePreview.style.display = 'none';
-            fileInfo.style.display = 'none';
-            processedFilesList.style.display = 'none';
-            processedFilesContainer.innerHTML = '';
-            progressBar.style.width = '0';
-            
-            showResult('リセットしました', false);
-        }
-
-        // メモリ管理：定期的にガベージコレクション
-        window.addEventListener('beforeunload', () => {
-            processedFiles.forEach(fileData => {
-                fileData.processed = null;
-                fileData.original = null;
-            });
-            processedFiles = [];
-        });
-    </script>
-</body>
-</html>
