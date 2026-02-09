@@ -81,9 +81,6 @@
         .privacy-safe { background: #e8f6f3; border: 1px solid #2ecc71; border-radius: 4px; padding: 15px; margin: 20px 0; display: none; }
         .privacy-safe h4 { color: #27ae60; margin-bottom: 5px; font-size: 16px; }
 
-        .exif-section { margin-bottom: 20px; }
-        .exif-section h5 { color: #2c3e50; margin-bottom: 10px; font-size: 14px; border-bottom: 2px solid #3498db; display: inline-block; }
-        .exif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-top: 10px; }
         .exif-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
         .exif-key { font-weight: bold; color: #555; font-size: 13px; }
         .exif-value { color: #333; text-align: right; font-size: 13px; font-family: monospace; word-break: break-all; }
@@ -120,7 +117,7 @@
         <p class="subtitle">画像のExif情報を解析し、プライバシー情報を安全に削除します</p>
         
         <div class="security-note">
-            <strong>セキュリティに関する注意：</strong>このツールはクライアントサイドで完全に処理されます。画像はサーバーに送信されません。ただし、JPEG形式では完全にすべてのメタデータが除去されることを保証するものではありません（IPTC、XMPなどは除去対象です）。
+            <strong>セキュリティに関する注意：</strong>このツールはクライアントサイドで完全に処理されます。画像はサーバーに送信されません。JPEG形式では0xE1-0xEF（全APP）と0xFE（コメント）を削除し、Exif、IPTC、XMPなどのメタデータを除去します。
         </div>
 
         <div class="upload-area" id="uploadArea">
@@ -196,13 +193,6 @@
         // 設定
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
         const SUPPORTED_TYPES = ['image/jpeg', 'image/png'];
-        
-        // JPEG削除対象マーカー: 0xE1(Exif), 0xE2-0xEF(APP2-15), 0xFE(Comment)
-        const METADATA_MARKERS = {
-            0xE1: 'Exif',
-            0xED: 'IPTC/Photoshop',
-            0xFE: 'Comment'
-        };
 
         // DOM要素
         const uploadArea = document.getElementById('uploadArea');
@@ -347,7 +337,7 @@
             }
         }
 
-        // Exif除去処理（改善版）
+        // Exif除去処理（完全版：0xE1-0xEFと0xFEを削除）
         function removeExifData(file) {
             return new Promise((resolve, reject) => {
                 if (file.type === 'image/png') {
@@ -403,9 +393,10 @@
                                 if (dv.getUint8(pos) === 0xFF) {
                                     const marker = dv.getUint8(pos + 1);
                                     
-                                    if (marker === 0xDA) break;
+                                    if (marker === 0xDA) break; // SOS（画像データ開始）
 
-                                    // 改善版: 0xE1-0xEF（全APP）と0xFE（コメント）を削除
+                                    // 削除対象: 0xE1-0xEF（全APP）と0xFE（コメント）
+                                    // 0xE1: Exif, 0xED: IPTC/Photoshop, 0xE2-0xEF: XMP等
                                     if ((marker >= 0xE1 && marker <= 0xEF) || marker === 0xFE) {
                                         pieces.push(e.target.result.slice(recess, pos));
                                         const len = dv.getUint16(pos + 2);
@@ -463,113 +454,177 @@
             });
         }
 
+        // リスク評価
         function evaluatePrivacyRisk(exifData) {
-            const riskKeys = ['DateTime', 'DateTimeOriginal', 'GPSLatitude', 'Make', 'Model'];
+            const riskKeys = ['DateTime', 'DateTimeOriginal', 'GPSLatitude', 'Make', 'Model', 'Artist', 'Copyright'];
             const foundRisks = riskKeys.filter(key => exifData[key] !== undefined);
 
             if (foundRisks.length > 0) {
                 privacyWarning.style.display = 'block';
+                // textContentを使ってXSSを防ぐ
                 warningText.textContent = `検出された情報: ${foundRisks.join(', ')}`;
             } else {
                 privacySafe.style.display = 'block';
             }
         }
 
-        // 改善版：textContentを使用してXSS対策を強化
+        // ★XSS対策済み: Exif情報の表示（DOM APIで直接構築）
         function displayExifInformation(exifData) {
             exifDetails.style.display = 'block';
-            exifContent.innerHTML = ''; // 初期化
+            exifContent.innerHTML = '';
 
-            const sections = {
-                camera: { title: 'カメラ', fields: ['Make', 'Model', 'Software'] },
-                settings: { title: '設定', fields: ['ExposureTime', 'FNumber', 'ISO', 'FocalLength'] },
-                datetime: { title: '日時', fields: ['DateTime', 'DateTimeOriginal'] },
-                technical: { title: '技術', fields: ['ImageWidth', 'ImageHeight', 'Orientation'] }
-            };
+            const ul = document.createElement('ul');
+            ul.style.listStyle = 'none';
+            ul.style.padding = '0';
 
-            Object.entries(sections).forEach(([key, section]) => {
-                let hasFields = false;
+            const keys = Object.keys(exifData);
+
+            keys.forEach(key => {
+                // 画像バイナリなど長すぎるデータは除外
+                if (key === 'MakerNote' || key === 'UserComment' || 
+                    (typeof exifData[key] === 'object' && exifData[key].length > 100)) {
+                    return;
+                }
+
+                const li = document.createElement('li');
+                li.className = 'exif-item';
+
+                const keySpan = document.createElement('span');
+                keySpan.className = 'exif-key';
+                keySpan.textContent = key; // ★重要: HTMLとして解釈させない
+
+                const valueSpan = document.createElement('span');
+                valueSpan.className = 'exif-value';
                 
-                section.fields.forEach(field => {
-                    if (exifData[field] !== undefined) {
-                        hasFields = true;
-                    }
-                });
+                // 値の整形
+                let val = exifData[key];
+                if (typeof val === 'number') {
+                    val = Math.round(val * 1000) / 1000;
+                }
+                valueSpan.textContent = String(val); // ★重要: textContent（XSS防止）
 
-                if (!hasFields) return;
-
-                const sectionDiv = document.createElement('div');
-                sectionDiv.className = 'exif-section';
-
-                const titleH5 = document.createElement('h5');
-                titleH5.textContent = section.title; // textContentで安全に設定
-
-                const gridDiv = document.createElement('div');
-                gridDiv.className = 'exif-grid';
-
-                section.fields.forEach(field => {
-                    if (exifData[field] !== undefined) {
-                        const itemDiv = document.createElement('div');
-                        itemDiv.className = 'exif-item';
-
-                        const keySpan = document.createElement('span');
-                        keySpan.className = 'exif-key';
-                        keySpan.textContent = field; // textContentで安全に設定
-
-                        const valueSpan = document.createElement('span');
-                        valueSpan.className = 'exif-value';
-                        valueSpan.textContent = String(exifData[field]); // textContentで安全に設定
-
-                        itemDiv.appendChild(keySpan);
-                        itemDiv.appendChild(valueSpan);
-                        gridDiv.appendChild(itemDiv);
-                    }
-                });
-
-                sectionDiv.appendChild(titleH5);
-                sectionDiv.appendChild(gridDiv);
-                exifContent.appendChild(sectionDiv);
+                li.appendChild(keySpan);
+                li.appendChild(valueSpan);
+                ul.appendChild(li);
             });
+
+            exifContent.appendChild(ul);
         }
 
+        // プレビュー表示
+        function showImagePreview(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                imagePreview.src = e.target.result;
+                imagePreview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // ファイル基本情報の表示（★XSS対策：textContent使用）
         function showFileInfo(file) {
             fileInfo.style.display = 'block';
             infoGrid.innerHTML = '';
+
             const items = [
                 { label: 'ファイル名', value: file.name },
                 { label: 'サイズ', value: formatBytes(file.size) },
-                { label: '種類', value: file.type || '不明' }
+                { label: 'タイプ', value: file.type || '不明' },
+                { label: '最終更新', value: new Date(file.lastModified).toLocaleString() }
             ];
+
             items.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'info-item';
                 
-                const labelSpan = document.createElement('span');
-                labelSpan.className = 'info-label';
-                labelSpan.textContent = item.label;
+                const label = document.createElement('span');
+                label.className = 'info-label';
+                label.textContent = item.label;
 
-                const valueSpan = document.createElement('span');
-                valueSpan.className = 'info-value';
-                valueSpan.textContent = item.value;
+                const val = document.createElement('span');
+                val.className = 'info-value';
+                val.textContent = item.value;
 
-                div.appendChild(labelSpan);
-                div.appendChild(valueSpan);
+                div.appendChild(label);
+                div.appendChild(val);
                 infoGrid.appendChild(div);
             });
         }
 
-        function showImagePreview(file) {
-            const url = URL.createObjectURL(file);
-            imagePreview.src = url;
-            imagePreview.style.display = 'block';
+        // 処理済みファイルのリスト表示とダウンロード準備
+        function displayProcessedFiles() {
+            processedFilesContainer.innerHTML = '';
+            
+            processedFiles.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'processed-file-item';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'processed-file-name';
+                nameSpan.textContent = item.name + ' (処理完了)'; // textContent使用
+
+                const dlBtn = document.createElement('a');
+                dlBtn.className = 'btn processed-file-btn';
+                dlBtn.textContent = 'ダウンロード';
+                
+                // BlobからダウンロードURLを生成
+                const url = URL.createObjectURL(item.processed);
+                dlBtn.href = url;
+                dlBtn.download = 'clean_' + item.name;
+
+                div.appendChild(nameSpan);
+                div.appendChild(dlBtn);
+                processedFilesContainer.appendChild(div);
+            });
         }
 
-        function showResult(message, isError) {
-            result.textContent = message;
+        // 一括ダウンロード（連続クリック方式）
+        function downloadAll() {
+            const links = processedFilesContainer.querySelectorAll('a');
+            if (links.length === 0) {
+                showResult('ダウンロード対象がありません', true);
+                return;
+            }
+
+            let delay = 0;
+            links.forEach(link => {
+                setTimeout(() => {
+                    link.click();
+                }, delay);
+                delay += 500;
+            });
+        }
+
+        // リセット処理
+        function clearAll() {
+            processedFiles = [];
+            fileInput.value = '';
+            exifContent.innerHTML = '';
+            infoGrid.innerHTML = '';
+            processedFilesContainer.innerHTML = '';
+            imagePreview.style.display = 'none';
+            imagePreview.src = '';
+            fileInfo.style.display = 'none';
+            exifDetails.style.display = 'none';
+            privacyWarning.style.display = 'none';
+            privacySafe.style.display = 'none';
+            downloadSection.style.display = 'none';
+            processedFilesList.style.display = 'none';
+            result.style.display = 'none';
+            progress.style.display = 'none';
+            uploadArea.classList.remove('disabled');
+            
+            showResult('リセットしました', false);
+        }
+
+        // ヘルパー関数: メッセージ表示
+        function showResult(msg, isError) {
+            result.textContent = msg;
             result.className = isError ? 'result error' : 'result';
             result.style.display = 'block';
         }
 
+        // ヘルパー関数: バイト表記変換
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -577,77 +632,6 @@
             const sizes = ['Bytes', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
-
-        // ダウンロード機能
-        function downloadAll() {
-            if (processedFiles.length === 0) {
-                showResult('ダウンロード対象のファイルがありません', true);
-                return;
-            }
-
-            processedFiles.forEach(fileData => {
-                downloadSingle(fileData);
-            });
-        }
-
-        function downloadSingle(fileData) {
-            const url = URL.createObjectURL(fileData.processed);
-            const link = document.createElement('a');
-            const nameWithoutExt = fileData.name.replace(/\.[^.]+$/, '');
-            const ext = fileData.name.match(/\.[^.]+$/) ? fileData.name.match(/\.[^.]+$/)[0] : '.jpg';
-            link.href = url;
-            link.download = `${nameWithoutExt}_exif_removed${ext}`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }
-
-        function displayProcessedFiles() {
-            processedFilesContainer.innerHTML = '';
-            processedFiles.forEach((fileData, index) => {
-                const item = document.createElement('div');
-                item.className = 'processed-file-item';
-                
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'processed-file-name';
-                nameSpan.textContent = fileData.name;
-
-                const btn = document.createElement('button');
-                btn.className = 'btn processed-file-btn';
-                btn.textContent = 'ダウンロード';
-                btn.addEventListener('click', () => {
-                    downloadSingle(fileData);
-                });
-
-                item.appendChild(nameSpan);
-                item.appendChild(btn);
-                processedFilesContainer.appendChild(item);
-            });
-        }
-
-        function clearAll() {
-            processedFiles.forEach(fileData => {
-                fileData.processed = null;
-                fileData.original = null;
-            });
-            processedFiles = [];
-            
-            fileInput.value = '';
-            progress.style.display = 'none';
-            result.style.display = 'none';
-            downloadSection.style.display = 'none';
-            privacyWarning.style.display = 'none';
-            privacySafe.style.display = 'none';
-            exifDetails.style.display = 'none';
-            imagePreview.style.display = 'none';
-            fileInfo.style.display = 'none';
-            processedFilesList.style.display = 'none';
-            processedFilesContainer.innerHTML = '';
-            progressBar.style.width = '0';
-            
-            showResult('リセットしました', false);
         }
 
         // メモリ管理
