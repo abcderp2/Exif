@@ -117,7 +117,7 @@
         <p class="subtitle">画像のExif情報を解析し、プライバシー情報を安全に削除します</p>
         
         <div class="security-note">
-            <strong>セキュリティに関する注意：</strong>このツールはクライアントサイドで完全に処理されます。画像はサーバーに送信されません。JPEG形式では0xE1-0xEF（全APP）と0xFE（コメント）を削除し、Exif、IPTC、XMPなどのメタデータを除去します。
+            <strong>セキュリティに関する注意：</strong>このツールはクライアントサイドで完全に処理されます。画像はサーバーに送信されません。JPEG形式ではExif、IPTC、XMPなどのメタデータを完全に除去します。
         </div>
 
         <div class="upload-area" id="uploadArea">
@@ -393,10 +393,9 @@
                                 if (dv.getUint8(pos) === 0xFF) {
                                     const marker = dv.getUint8(pos + 1);
                                     
-                                    if (marker === 0xDA) break; // SOS（画像データ開始）
+                                    if (marker === 0xDA) break;
 
                                     // 削除対象: 0xE1-0xEF（全APP）と0xFE（コメント）
-                                    // 0xE1: Exif, 0xED: IPTC/Photoshop, 0xE2-0xEF: XMP等
                                     if ((marker >= 0xE1 && marker <= 0xEF) || marker === 0xFE) {
                                         pieces.push(e.target.result.slice(recess, pos));
                                         const len = dv.getUint16(pos + 2);
@@ -461,47 +460,43 @@
 
             if (foundRisks.length > 0) {
                 privacyWarning.style.display = 'block';
-                // textContentを使ってXSSを防ぐ
                 warningText.textContent = `検出された情報: ${foundRisks.join(', ')}`;
             } else {
                 privacySafe.style.display = 'block';
             }
         }
 
-        // ★XSS対策済み: Exif情報の表示（DOM APIで直接構築）
+        // 詳細なExif情報の表示（XSS対策済み）
         function displayExifInformation(exifData) {
             exifDetails.style.display = 'block';
-            exifContent.innerHTML = '';
+            exifContent.innerHTML = ''; // コンテナをクリア
 
             const ul = document.createElement('ul');
             ul.style.listStyle = 'none';
-            ul.style.padding = '0';
 
+            // すべてのキーを取得
             const keys = Object.keys(exifData);
 
             keys.forEach(key => {
-                // 画像バイナリなど長すぎるデータは除外
-                if (key === 'MakerNote' || key === 'UserComment' || 
-                    (typeof exifData[key] === 'object' && exifData[key].length > 100)) {
-                    return;
-                }
+                // バイナリデータや長すぎるデータは見にくいため除外
+                if (key === 'MakerNote' || key === 'UserComment' || (typeof exifData[key] === 'object' && exifData[key].length > 100)) return;
 
                 const li = document.createElement('li');
                 li.className = 'exif-item';
 
                 const keySpan = document.createElement('span');
                 keySpan.className = 'exif-key';
-                keySpan.textContent = key; // ★重要: HTMLとして解釈させない
+                keySpan.textContent = key; // ★重要: HTMLタグを無効化して表示
 
                 const valueSpan = document.createElement('span');
                 valueSpan.className = 'exif-value';
                 
-                // 値の整形
+                // 値の整形（オブジェクトや数値の処理）
                 let val = exifData[key];
                 if (typeof val === 'number') {
-                    val = Math.round(val * 1000) / 1000;
+                    val = Math.round(val * 1000) / 1000; // 小数点以下を丸める
                 }
-                valueSpan.textContent = String(val); // ★重要: textContent（XSS防止）
+                valueSpan.textContent = String(val); // ★重要: HTMLタグを無効化して表示
 
                 li.appendChild(keySpan);
                 li.appendChild(valueSpan);
@@ -511,7 +506,7 @@
             exifContent.appendChild(ul);
         }
 
-        // プレビュー表示
+        // プレビュー画像表示
         function showImagePreview(file) {
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -521,7 +516,7 @@
             reader.readAsDataURL(file);
         }
 
-        // ファイル基本情報の表示（★XSS対策：textContent使用）
+        // ファイル基本情報の表示
         function showFileInfo(file) {
             fileInfo.style.display = 'block';
             infoGrid.innerHTML = '';
@@ -551,17 +546,17 @@
             });
         }
 
-        // 処理済みファイルのリスト表示とダウンロード準備
+        // 処理済みファイルのリスト表示
         function displayProcessedFiles() {
             processedFilesContainer.innerHTML = '';
             
-            processedFiles.forEach((item, index) => {
+            processedFiles.forEach((item) => {
                 const div = document.createElement('div');
                 div.className = 'processed-file-item';
 
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'processed-file-name';
-                nameSpan.textContent = item.name + ' (処理完了)'; // textContent使用
+                nameSpan.textContent = item.name + ' (保護処理完了)';
 
                 const dlBtn = document.createElement('a');
                 dlBtn.className = 'btn processed-file-btn';
@@ -570,7 +565,7 @@
                 // BlobからダウンロードURLを生成
                 const url = URL.createObjectURL(item.processed);
                 dlBtn.href = url;
-                dlBtn.download = 'clean_' + item.name;
+                dlBtn.download = 'safe_' + item.name;
 
                 div.appendChild(nameSpan);
                 div.appendChild(dlBtn);
@@ -578,20 +573,17 @@
             });
         }
 
-        // 一括ダウンロード（連続クリック方式）
+        // 一括ダウンロード
         function downloadAll() {
             const links = processedFilesContainer.querySelectorAll('a');
-            if (links.length === 0) {
-                showResult('ダウンロード対象がありません', true);
-                return;
-            }
+            if (links.length === 0) return;
 
             let delay = 0;
             links.forEach(link => {
                 setTimeout(() => {
                     link.click();
                 }, delay);
-                delay += 500;
+                delay += 500; // ブラウザのブロックを防ぐため少し間隔を空ける
             });
         }
 
@@ -613,18 +605,16 @@
             result.style.display = 'none';
             progress.style.display = 'none';
             uploadArea.classList.remove('disabled');
-            
-            showResult('リセットしました', false);
         }
 
-        // ヘルパー関数: メッセージ表示
+        // メッセージ表示
         function showResult(msg, isError) {
             result.textContent = msg;
             result.className = isError ? 'result error' : 'result';
             result.style.display = 'block';
         }
 
-        // ヘルパー関数: バイト表記変換
+        // サイズ表記変換
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
