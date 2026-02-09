@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>Exif情報表示・除去ツール</title>
-    <!-- SRI付きでCDN読み込み（改ざん防止） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js" 
         integrity="sha512-xsoiisGNT6Dw2Le1Cocn5305Uje1pOYeSzrpO3RD9K+JTpVH9KqSXksXqur8cobTEKJcFz0COYq4723mzo88/Q==" 
         crossorigin="anonymous" 
@@ -623,15 +622,6 @@
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
-
-        // メモリ管理
-        window.addEventListener('beforeunload', () => {
-            processedFiles.forEach(fileData => {
-                fileData.processed = null;
-                fileData.original = null;
-            });
-            processedFiles = [];
-        });
     </script>
 </body>
 </html>
