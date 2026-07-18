@@ -495,6 +495,9 @@
         node.parentNode?.removeChild(node);
         continue;
       }
+      if (name === "style" && hasUnsafeSvgCss(node.textContent || "")) {
+        throw new Error("外部参照や動きを含むSVGは安全のため処理できません");
+      }
       for (const attribute of Array.from(node.attributes)) {
         const attributeName = attribute.name.toLowerCase();
         const value = attribute.value.trim();
@@ -505,13 +508,17 @@
         if (attributeName === "href" || attributeName === "xlink:href") {
           if (!value.startsWith("#")) throw new Error("外部参照を含むSVGは処理できません");
         }
-        if (attributeName === "style" && /url\s*\(|@import|javascript:/i.test(value)) {
+        if (attributeName === "style" && hasUnsafeSvgCss(value)) {
           throw new Error("外部参照を含むSVGは処理できません");
         }
         if (/javascript\s*:/i.test(value)) throw new Error("安全でないSVGを処理できません");
       }
     }
     return new XMLSerializer().serializeToString(documentXml.documentElement);
+  }
+
+  function hasUnsafeSvgCss(value) {
+    return /url\s*\(|@import|javascript\s*:|@(?:-webkit-)?keyframes\b|(?:^|[;{\s])(?:-webkit-)?(?:animation|transition)(?:-[a-z-]+)?\s*:/i.test(value);
   }
 
   function loadImage(url) {
