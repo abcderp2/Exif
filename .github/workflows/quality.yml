@@ -1,0 +1,32 @@
+name: Quality checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check image-worker.js
+      - name: Check Python syntax
+        run: python3 -m py_compile exif_remover.py
+      - name: Check required files and local references
+        shell: bash
+        run: |
+          test -f index.html
+          test -f styles.css
+          test -f app.js
+          test -f image-worker.js
+          grep -Fq 'styles.css' index.html
+          grep -Fq 'app.js' index.html
+          grep -Fq 'image-worker.js' app.js

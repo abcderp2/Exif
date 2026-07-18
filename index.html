@@ -1,627 +1,152 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Exif情報表示・除去ツール</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js" 
-        integrity="sha512-xsoiisGNT6Dw2Le1Cocn5305Uje1pOYeSzrpO3RD9K+JTpVH9KqSXksXqur8cobTEKJcFz0COYq4723mzo88/Q==" 
-        crossorigin="anonymous" 
-        referrerpolicy="no-referrer"></script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            background-color: #f5f5f5;
-            color: #333;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            padding: 40px;
-        }
-        h1 { text-align: center; color: #2c3e50; margin-bottom: 10px; font-size: 24px; font-weight: bold; }
-        .subtitle { text-align: center; color: #666; margin-bottom: 40px; font-size: 14px; }
-        
-        .upload-area {
-            border: 2px dashed #bdc3c7;
-            border-radius: 8px;
-            padding: 60px 40px;
-            text-align: center;
-            background: #fafafa;
-            margin-bottom: 30px;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            position: relative;
-        }
-        .upload-area:hover { border-color: #3498db; background: #ecf0f1; }
-        .upload-area.dragover { border-color: #2980b9; background: #e8f6f3; }
-        .upload-area.disabled { opacity: 0.6; cursor: not-allowed; }
-        .upload-text { font-size: 18px; color: #2c3e50; margin-bottom: 10px; font-weight: bold; }
-        .upload-subtext { color: #7f8c8d; font-size: 14px; }
-        
-        #fileInput { display: none; }
-
-        .btn {
-            background-color: #3498db; color: white; border: none; padding: 12px 24px;
-            border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer;
-            transition: background-color 0.3s; display: inline-block; text-decoration: none; margin: 5px;
-        }
-        .btn:hover { background-color: #2980b9; }
-        .btn:disabled { background-color: #95a5a6; cursor: not-allowed; }
-        .btn.danger { background-color: #e74c3c; }
-        .btn.danger:hover { background-color: #c0392b; }
-
-        .button-group { text-align: center; margin: 20px 0; }
-
-        .progress { width: 100%; height: 4px; background: #ecf0f1; margin: 20px 0; overflow: hidden; display: none; }
-        .progress-bar { height: 100%; background-color: #3498db; transition: width 0.3s ease; width: 0; }
-        .progress-text { text-align: center; margin-top: 10px; font-size: 14px; color: #666; display: none; }
-
-        .result { margin-top: 30px; padding: 15px; border-radius: 4px; background: #e8f6f3; border-left: 4px solid #2ecc71; display: none; }
-        .result.error { background: #fdedec; border-left-color: #e74c3c; }
-
-        .file-info, .exif-details { background: #fff; padding: 20px; border: 1px solid #eee; margin: 20px 0; display: none; border-radius: 4px; }
-        .file-info h4, .exif-details h4 { margin-bottom: 15px; color: #2c3e50; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
-        
-        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-        .info-item { background: white; padding: 10px; border: 1px solid #eee; }
-        .info-label { font-weight: bold; color: #7f8c8d; font-size: 12px; display: block; margin-bottom: 4px; }
-        .info-value { color: #333; font-size: 14px; word-break: break-all; }
-
-        .privacy-warning { background: #fdedec; border: 1px solid #e74c3c; border-radius: 4px; padding: 15px; margin: 20px 0; display: none; }
-        .privacy-warning h4 { color: #c0392b; margin-bottom: 5px; font-size: 16px; }
-        .privacy-safe { background: #e8f6f3; border: 1px solid #2ecc71; border-radius: 4px; padding: 15px; margin: 20px 0; display: none; }
-        .privacy-safe h4 { color: #27ae60; margin-bottom: 5px; font-size: 16px; }
-
-        .exif-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
-        .exif-key { font-weight: bold; color: #555; font-size: 13px; }
-        .exif-value { color: #333; text-align: right; font-size: 13px; font-family: monospace; word-break: break-all; }
-        
-        .image-preview { max-width: 100%; max-height: 300px; border: 1px solid #ddd; margin: 20px auto; display: none; }
-        .download-section { text-align: center; margin-top: 30px; display: none; }
-        
-        .processed-files-list { margin: 20px 0; }
-        .processed-files-list h4 { color: #2c3e50; margin-bottom: 10px; }
-        .processed-file-item { background: #f9f9f9; padding: 10px; margin: 5px 0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
-        .processed-file-name { flex: 1; }
-        .processed-file-btn { margin-left: 10px; }
-        
-        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 40px 0; border-top: 1px solid #eee; padding-top: 40px; }
-        .feature { text-align: center; }
-        .feature h3 { margin-bottom: 10px; color: #2c3e50; font-size: 16px; }
-        .feature p { color: #666; font-size: 13px; line-height: 1.5; }
-        .github-link { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; }
-        
-        .security-note { background: #fff3cd; border: 1px solid #ffc107; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 12px; }
-
-        @media (max-width: 600px) {
-            .container { padding: 20px; }
-            .upload-area { padding: 40px 20px; }
-            h1 { font-size: 20px; }
-            .processed-file-item { flex-direction: column; align-items: flex-start; }
-            .processed-file-btn { margin-left: 0; margin-top: 10px; }
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1324">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'none'; font-src 'self'; media-src 'self' blob:;">
+  <title>Exif除去 | 画像を端末内で安全に処理</title>
+  <meta name="description" content="画像を端末のブラウザ内だけで再生成し、Exif、GPS、撮影日時などのメタデータを除去します。">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
 </head>
 <body>
-    <div class="container">
-        <h1>Exif情報表示・除去ツール</h1>
-        <p class="subtitle">画像のExif情報を解析し、プライバシー情報を安全に削除します</p>
-        
-        <div class="security-note">
-            <strong>セキュリティに関する注意：</strong>このツールはクライアントサイドで完全に処理されます。画像はサーバーに送信されません。JPEG形式ではExif、IPTC、XMPなどのメタデータを完全に除去します。
+  <noscript>
+    <div class="noscript-message">このサイトはブラウザ内で画像を処理するため、JavaScriptを有効にして使ってください。</div>
+  </noscript>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Exif除去の先頭へ">
+      <span class="brand-mark" aria-hidden="true">EX</span>
+      <span>Exif除去</span>
+    </a>
+    <a class="text-link" href="https://github.com/abcderp2/Exif" target="_blank" rel="noopener noreferrer">仕様とソース</a>
+  </header>
+
+  <main class="page-shell">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">端末内で完結する画像プライバシー処理</p>
+      <h1 id="page-title">写真に残る情報を、<br>保存前に取り除く。</h1>
+      <p class="hero-copy">画像をサーバーへ送らず、ブラウザ標準の画像処理だけで新しい画像を作ります。元のファイルは変更されません。</p>
+      <div class="trust-row" aria-label="このサイトの方針">
+        <span>外部送信なし</span>
+        <span>外部ライブラリなし</span>
+        <span>無料の静的サイト</span>
+      </div>
+    </section>
+
+    <section class="panel upload-panel" aria-labelledby="upload-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">最初の操作</p>
+          <h2 id="upload-title">画像を選ぶ</h2>
         </div>
+        <span class="step-number" aria-hidden="true">01</span>
+      </div>
 
-        <div class="upload-area" id="uploadArea">
-            <div class="upload-text">画像をここにドラッグ&ドロップ</div>
-            <div class="upload-subtext">またはクリックしてファイルを選択（最大50MB、JPG/PNG）</div>
+      <button class="drop-zone" id="dropZone" type="button" aria-describedby="upload-help upload-limits">
+        <span class="drop-zone-title">ここに画像を置く</span>
+        <span class="drop-zone-subtitle">または、この領域を押して選択</span>
+        <span class="drop-zone-button">ファイルを選ぶ</span>
+      </button>
+      <input id="fileInput" class="visually-hidden" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.avif,.heic,.heif,.jxl,.ico,.svg" multiple>
+      <p id="upload-help" class="help-text">複数選択とドラッグアンドドロップに対応しています。画像はこの端末から外へ送信されません。</p>
+      <p id="upload-limits" class="limit-text">一度に最大50個、合計150MBまで。1個あたり50MBまで。</p>
+    </section>
+
+    <section class="panel settings-panel" aria-labelledby="settings-title">
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-kicker">処理の設定</p>
+          <h2 id="settings-title">変換の扱い</h2>
         </div>
-        <input type="file" id="fileInput" accept="image/jpeg, image/png, .jpg, .jpeg, .png" multiple>
+        <span class="step-number" aria-hidden="true">02</span>
+      </div>
+      <div class="settings-grid">
+        <label class="field-label" for="qualitySelect">
+          <span>JPEGとWebPの画質</span>
+          <select id="qualitySelect">
+            <option value="0.98">高品質 98</option>
+            <option value="0.96" selected>標準 96</option>
+            <option value="0.90">軽量 90</option>
+          </select>
+        </label>
+        <label class="field-label" for="largeImageSelect">
+          <span>大きな画像の扱い</span>
+          <select id="largeImageSelect">
+            <option value="safe" selected>端末に合わせて安全に縮小</option>
+            <option value="original">元のサイズを優先</option>
+          </select>
+        </label>
+      </div>
+      <p class="settings-note" id="settings-note">JPEGとWebPは再エンコードするため、元と完全に同じ画質にはなりません。PNGは画素を変えずに保存します。</p>
+    </section>
 
-        <div class="progress" id="progress">
-            <div class="progress-bar" id="progressBar"></div>
-            <div class="progress-text" id="progressText"></div>
+    <section class="panel queue-panel" id="queuePanel" aria-labelledby="queue-title" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">処理の一覧</p>
+          <h2 id="queue-title">待機中の画像</h2>
         </div>
-
-        <div class="privacy-warning" id="privacyWarning">
-            <h4>注意: プライバシーリスクが検出されました</h4>
-            <p id="warningText">この画像には位置情報や撮影日時などの個人情報が含まれている可能性があります。</p>
+        <span class="step-number" aria-hidden="true">03</span>
+      </div>
+      <div class="queue-summary">
+        <div>
+          <p class="queue-count" id="queueCount">0個</p>
+          <p class="queue-status" id="queueStatus" aria-live="polite">画像を追加してください</p>
         </div>
-
-        <div class="privacy-safe" id="privacySafe">
-            <h4>安全</h4>
-            <p>この画像にはExif情報が含まれていません。</p>
+        <div class="progress-wrap" aria-label="処理の進み具合">
+          <div class="progress-track"><span id="progressBar"></span></div>
+          <span id="progressPercent">0%</span>
         </div>
+      </div>
+      <div class="action-row">
+        <button class="button button-primary" id="startButton" type="button" disabled>処理を開始</button>
+        <button class="button button-secondary" id="downloadAllButton" type="button" disabled>完了分を順番に保存</button>
+        <button class="button button-quiet" id="resetButton" type="button">やり直す</button>
+      </div>
+    </section>
 
-        <div class="file-info" id="fileInfo">
-            <h4>ファイル情報</h4>
-            <div class="info-grid" id="infoGrid"></div>
+    <section class="panel results-panel" id="resultsPanel" aria-labelledby="results-title" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">結果</p>
+          <h2 id="results-title">処理結果</h2>
         </div>
+        <span class="step-number" aria-hidden="true">04</span>
+      </div>
+      <div id="resultsList" class="results-list" role="list"></div>
+    </section>
 
-        <div class="exif-details" id="exifDetails">
-            <h4>詳細なExif情報</h4>
-            <div id="exifContent"></div>
+    <section class="panel preview-panel" id="previewPanel" aria-labelledby="preview-title" hidden>
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-kicker">確認</p>
+          <h2 id="preview-title">保存前のプレビュー</h2>
         </div>
+      </div>
+      <div class="preview-frame"><img id="previewImage" alt="処理後の画像プレビュー"></div>
+      <p class="preview-caption" id="previewCaption"></p>
+    </section>
 
-        <img id="imagePreview" class="image-preview" alt="">
-
-        <div class="result" id="result"></div>
-
-        <div class="processed-files-list" id="processedFilesList">
-            <h4>処理済みファイル</h4>
-            <div id="processedFilesContainer"></div>
+    <section class="plain-note" aria-labelledby="notice-title">
+      <h2 id="notice-title">先に知っておくこと</h2>
+      <div class="notice-grid">
+        <div>
+          <h3>除去の仕組み</h3>
+          <p>元のファイルを編集するのではなく、画像を読み込み、画素から新しい画像を作ります。Exif、GPS、撮影日時、機種名、作者情報、コメントなどは引き継ぎません。</p>
         </div>
-
-        <div class="download-section" id="downloadSection">
-            <div class="button-group">
-                <button class="btn" id="downloadAllBtn">全て一括ダウンロード</button>
-                <button class="btn danger" id="clearBtn">リセット</button>
-            </div>
+        <div>
+          <h3>形式の限界</h3>
+          <p>読み込みと保存はブラウザの対応範囲に左右されます。GIFやアニメーションWebPは先頭フレームの静止画として保存されます。未対応形式は処理前にエラーを表示します。</p>
         </div>
+      </div>
+    </section>
+  </main>
 
-        <div class="features">
-            <div class="feature">
-                <h3>解析</h3>
-                <p>画像の詳細データを解析</p>
-            </div>
-            <div class="feature">
-                <h3>保護</h3>
-                <p>メタデータを完全に除去</p>
-            </div>
-            <div class="feature">
-                <h3>高速</h3>
-                <p>ブラウザ内で完結処理</p>
-            </div>
-        </div>
-
-        <div class="github-link">
-            <a href="https://github.com/abcderp2/Exif" class="btn" target="_blank">
-                GitHub リポジトリ
-            </a>
-        </div>
-    </div>
-
-    <script>
-        // 設定
-        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-        const SUPPORTED_TYPES = ['image/jpeg', 'image/png'];
-
-        // DOM要素
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
-        const progress = document.getElementById('progress');
-        const progressBar = document.getElementById('progressBar');
-        const progressText = document.getElementById('progressText');
-        const result = document.getElementById('result');
-        const fileInfo = document.getElementById('fileInfo');
-        const infoGrid = document.getElementById('infoGrid');
-        const exifDetails = document.getElementById('exifDetails');
-        const exifContent = document.getElementById('exifContent');
-        const privacyWarning = document.getElementById('privacyWarning');
-        const privacySafe = document.getElementById('privacySafe');
-        const warningText = document.getElementById('warningText');
-        const imagePreview = document.getElementById('imagePreview');
-        const downloadSection = document.getElementById('downloadSection');
-        const downloadAllBtn = document.getElementById('downloadAllBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        const processedFilesList = document.getElementById('processedFilesList');
-        const processedFilesContainer = document.getElementById('processedFilesContainer');
-
-        let processedFiles = [];
-        let isProcessing = false;
-
-        // イベントリスナー設定
-        uploadArea.addEventListener('click', () => {
-            if (!isProcessing) fileInput.click();
-        });
-        
-        ['dragover', 'dragenter'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (!isProcessing) uploadArea.classList.add('dragover');
-            });
-        });
-
-        ['dragleave', 'dragend', 'drop'].forEach(eventName => {
-            uploadArea.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                uploadArea.classList.remove('dragover');
-            });
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            const files = Array.from(e.dataTransfer.files);
-            handleFiles(files);
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            const files = Array.from(e.target.files);
-            handleFiles(files);
-            fileInput.value = '';
-        });
-
-        downloadAllBtn.addEventListener('click', downloadAll);
-        clearBtn.addEventListener('click', clearAll);
-
-        // ファイル判定と処理
-        function handleFiles(files) {
-            if (isProcessing) {
-                showResult('処理中です。お待ちください。', true);
-                return;
-            }
-
-            if (files.length === 0) return;
-
-            const validFiles = files.filter(file => {
-                const isCorrectType = SUPPORTED_TYPES.includes(file.type) || 
-                    /\.(jpg|jpeg|png)$/i.test(file.name);
-                const isSizeOk = file.size <= MAX_FILE_SIZE;
-
-                if (!isCorrectType) {
-                    showResult(`${file.name}は対応形式ではありません（JPG、PNG）`, true);
-                    return false;
-                }
-                if (!isSizeOk) {
-                    showResult(`${file.name}は50MBを超えています`, true);
-                    return false;
-                }
-                return true;
-            });
-
-            if (validFiles.length > 0) {
-                processFiles(validFiles);
-            }
-        }
-
-        async function processFiles(files) {
-            isProcessing = true;
-            uploadArea.classList.add('disabled');
-            progress.style.display = 'block';
-            progressText.style.display = 'block';
-            result.style.display = 'none';
-            downloadSection.style.display = 'none';
-            privacyWarning.style.display = 'none';
-            privacySafe.style.display = 'none';
-            exifDetails.style.display = 'none';
-            imagePreview.style.display = 'none';
-            processedFilesList.style.display = 'none';
-            exifContent.innerHTML = '';
-
-            try {
-                for (let i = 0; i < files.length; i++) {
-                    const file = files[i];
-                    const percent = Math.round(((i + 1) / files.length) * 100);
-                    progressBar.style.width = `${percent}%`;
-                    progressText.textContent = `${i + 1}/${files.length} 処理中...`;
-
-                    if (i === 0) {
-                        showImagePreview(file);
-                        showFileInfo(file);
-                        await analyzeExifData(file);
-                    }
-
-                    const processedFile = await removeExifData(file);
-                    processedFiles.push({
-                        original: file,
-                        processed: processedFile,
-                        name: file.name
-                    });
-                }
-
-                displayProcessedFiles();
-                showResult(`${files.length}個のファイルの処理が完了しました。`, false);
-                downloadSection.style.display = 'block';
-                processedFilesList.style.display = 'block';
-
-            } catch (error) {
-                console.error(error);
-                showResult(`エラー: ${error.message}`, true);
-            } finally {
-                isProcessing = false;
-                uploadArea.classList.remove('disabled');
-                setTimeout(() => {
-                    progress.style.display = 'none';
-                    progressText.style.display = 'none';
-                    progressBar.style.width = '0';
-                }, 500);
-            }
-        }
-
-        // Exif除去処理（完全版：0xE1-0xEFと0xFEを削除）
-        function removeExifData(file) {
-            return new Promise((resolve, reject) => {
-                if (file.type === 'image/png') {
-                    const img = new Image();
-                    const url = URL.createObjectURL(file);
-                    
-                    img.onload = () => {
-                        try {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = img.width;
-                            canvas.height = img.height;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(img, 0, 0);
-                            
-                            canvas.toBlob((blob) => {
-                                URL.revokeObjectURL(url);
-                                if (blob) {
-                                    resolve(blob);
-                                } else {
-                                    reject(new Error('PNG変換失敗'));
-                                }
-                            }, 'image/png');
-                        } catch (err) {
-                            URL.revokeObjectURL(url);
-                            reject(new Error('PNG処理エラー: ' + err.message));
-                        }
-                    };
-                    
-                    img.onerror = () => {
-                        URL.revokeObjectURL(url);
-                        reject(new Error('画像読み込み失敗'));
-                    };
-
-                    img.src = url;
-                    return;
-                }
-
-                if (file.type === 'image/jpeg' || /\.jpe?g$/i.test(file.name)) {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        try {
-                            const dv = new DataView(e.target.result);
-                            const pieces = [];
-                            let recess = 0;
-
-                            if (dv.getUint16(0) !== 0xFFD8) {
-                                resolve(file);
-                                return;
-                            }
-
-                            let pos = 2;
-                            while (pos < dv.byteLength) {
-                                if (dv.getUint8(pos) === 0xFF) {
-                                    const marker = dv.getUint8(pos + 1);
-                                    
-                                    if (marker === 0xDA) break;
-
-                                    // 削除対象: 0xE1-0xEF（全APP）と0xFE（コメント）
-                                    if ((marker >= 0xE1 && marker <= 0xEF) || marker === 0xFE) {
-                                        pieces.push(e.target.result.slice(recess, pos));
-                                        const len = dv.getUint16(pos + 2);
-                                        pos += 2 + len;
-                                        recess = pos;
-                                    } else {
-                                        const len = dv.getUint16(pos + 2);
-                                        pos += 2 + len;
-                                    }
-                                } else {
-                                    pos++;
-                                }
-                            }
-
-                            pieces.push(e.target.result.slice(recess));
-                            const newBlob = new Blob(pieces, { type: 'image/jpeg' });
-                            resolve(newBlob);
-
-                        } catch (err) {
-                            console.error("JPEG処理エラー:", err);
-                            reject(new Error('JPEG処理エラー: ' + err.message));
-                        }
-                    };
-                    
-                    reader.onerror = () => {
-                        reject(new Error('ファイル読み込み失敗'));
-                    };
-                    
-                    reader.readAsArrayBuffer(file);
-                } else {
-                    resolve(file);
-                }
-            });
-        }
-
-        // Exif解析
-        function analyzeExifData(file) {
-            return new Promise((resolve) => {
-                if (typeof EXIF === 'undefined') {
-                    console.warn('EXIFライブラリが読み込まれていません');
-                    resolve();
-                    return;
-                }
-                
-                EXIF.getData(file, function() {
-                    const allTags = EXIF.getAllTags(this);
-                    if (Object.keys(allTags).length === 0) {
-                        privacySafe.style.display = 'block';
-                    } else {
-                        displayExifInformation(allTags);
-                        evaluatePrivacyRisk(allTags);
-                    }
-                    resolve();
-                });
-            });
-        }
-
-        // リスク評価
-        function evaluatePrivacyRisk(exifData) {
-            const riskKeys = ['DateTime', 'DateTimeOriginal', 'GPSLatitude', 'Make', 'Model', 'Artist', 'Copyright'];
-            const foundRisks = riskKeys.filter(key => exifData[key] !== undefined);
-
-            if (foundRisks.length > 0) {
-                privacyWarning.style.display = 'block';
-                warningText.textContent = `検出された情報: ${foundRisks.join(', ')}`;
-            } else {
-                privacySafe.style.display = 'block';
-            }
-        }
-
-        // 詳細なExif情報の表示（XSS対策済み）
-        function displayExifInformation(exifData) {
-            exifDetails.style.display = 'block';
-            exifContent.innerHTML = ''; // コンテナをクリア
-
-            const ul = document.createElement('ul');
-            ul.style.listStyle = 'none';
-
-            // すべてのキーを取得
-            const keys = Object.keys(exifData);
-
-            keys.forEach(key => {
-                // バイナリデータや長すぎるデータは見にくいため除外
-                if (key === 'MakerNote' || key === 'UserComment' || (typeof exifData[key] === 'object' && exifData[key].length > 100)) return;
-
-                const li = document.createElement('li');
-                li.className = 'exif-item';
-
-                const keySpan = document.createElement('span');
-                keySpan.className = 'exif-key';
-                keySpan.textContent = key; // ★重要: HTMLタグを無効化して表示
-
-                const valueSpan = document.createElement('span');
-                valueSpan.className = 'exif-value';
-                
-                // 値の整形（オブジェクトや数値の処理）
-                let val = exifData[key];
-                if (typeof val === 'number') {
-                    val = Math.round(val * 1000) / 1000; // 小数点以下を丸める
-                }
-                valueSpan.textContent = String(val); // ★重要: HTMLタグを無効化して表示
-
-                li.appendChild(keySpan);
-                li.appendChild(valueSpan);
-                ul.appendChild(li);
-            });
-
-            exifContent.appendChild(ul);
-        }
-
-        // プレビュー画像表示
-        function showImagePreview(file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                imagePreview.src = e.target.result;
-                imagePreview.style.display = 'block';
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // ファイル基本情報の表示
-        function showFileInfo(file) {
-            fileInfo.style.display = 'block';
-            infoGrid.innerHTML = '';
-
-            const items = [
-                { label: 'ファイル名', value: file.name },
-                { label: 'サイズ', value: formatBytes(file.size) },
-                { label: 'タイプ', value: file.type || '不明' },
-                { label: '最終更新', value: new Date(file.lastModified).toLocaleString() }
-            ];
-
-            items.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'info-item';
-                
-                const label = document.createElement('span');
-                label.className = 'info-label';
-                label.textContent = item.label;
-
-                const val = document.createElement('span');
-                val.className = 'info-value';
-                val.textContent = item.value;
-
-                div.appendChild(label);
-                div.appendChild(val);
-                infoGrid.appendChild(div);
-            });
-        }
-
-        // 処理済みファイルのリスト表示
-        function displayProcessedFiles() {
-            processedFilesContainer.innerHTML = '';
-            
-            processedFiles.forEach((item) => {
-                const div = document.createElement('div');
-                div.className = 'processed-file-item';
-
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'processed-file-name';
-                nameSpan.textContent = item.name + ' (保護処理完了)';
-
-                const dlBtn = document.createElement('a');
-                dlBtn.className = 'btn processed-file-btn';
-                dlBtn.textContent = 'ダウンロード';
-                
-                // BlobからダウンロードURLを生成
-                const url = URL.createObjectURL(item.processed);
-                dlBtn.href = url;
-                dlBtn.download = 'safe_' + item.name;
-
-                div.appendChild(nameSpan);
-                div.appendChild(dlBtn);
-                processedFilesContainer.appendChild(div);
-            });
-        }
-
-        // 一括ダウンロード
-        function downloadAll() {
-            const links = processedFilesContainer.querySelectorAll('a');
-            if (links.length === 0) return;
-
-            let delay = 0;
-            links.forEach(link => {
-                setTimeout(() => {
-                    link.click();
-                }, delay);
-                delay += 500; // ブラウザのブロックを防ぐため少し間隔を空ける
-            });
-        }
-
-        // リセット処理
-        function clearAll() {
-            processedFiles = [];
-            fileInput.value = '';
-            exifContent.innerHTML = '';
-            infoGrid.innerHTML = '';
-            processedFilesContainer.innerHTML = '';
-            imagePreview.style.display = 'none';
-            imagePreview.src = '';
-            fileInfo.style.display = 'none';
-            exifDetails.style.display = 'none';
-            privacyWarning.style.display = 'none';
-            privacySafe.style.display = 'none';
-            downloadSection.style.display = 'none';
-            processedFilesList.style.display = 'none';
-            result.style.display = 'none';
-            progress.style.display = 'none';
-            uploadArea.classList.remove('disabled');
-        }
-
-        // メッセージ表示
-        function showResult(msg, isError) {
-            result.textContent = msg;
-            result.className = isError ? 'result error' : 'result';
-            result.style.display = 'block';
-        }
-
-        // サイズ表記変換
-        function formatBytes(bytes, decimals = 2) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
-    </script>
+  <footer class="site-footer">
+    <p>このサイトは静的なブラウザアプリです。画像の送信、広告、アクセス解析を行いません。</p>
+    <p><a class="text-link" href="https://github.com/abcderp2/Exif" target="_blank" rel="noopener noreferrer">GitHubで仕様を確認する</a></p>
+  </footer>
 </body>
 </html>

@@ -1,155 +1,162 @@
 #!/usr/bin/env python3
-"""
-Exif Remover Tool
------------------
-JPEGおよびPNG画像からExifメタデータを除去するシンプルなコマンドラインツール
+"""画像を再保存してメタデータを引き継がないコマンドライン版。"""
 
-使用方法:
-    python exif_remover.py image.jpg
-    python exif_remover.py *.jpg
-    python exif_remover.py image1.png image2.jpg
+from __future__ import annotations
 
-依存ライブラリ:
-    Pillow (pip install Pillow)
-
-ライセンス: MIT License
-"""
-
-import sys
+import argparse
 import glob
-import os
-from PIL import Image
+import sys
+from pathlib import Path
+from typing import Iterable
+
+from PIL import Image, ImageOps, ImageSequence
 
 
-def remove_exif(input_path, output_path):
-    """
-    画像からExifデータを除去して新しいファイルに保存する関数
-    
-    Args:
-        input_path (str): 入力画像ファイルのパス
-        output_path (str): 出力画像ファイルのパス
-    """
-    try:
-        # 画像ファイルを開く
-        with Image.open(input_path) as image:
-            # 対応する形式かチェック
-            if image.format not in ['JPEG', 'PNG']:
-                print(f"警告: {input_path} はサポートされていない形式です ({image.format})")
-                return False
-            
-            # 画像データを取得（Exifなし）
-            # RGBに変換してExifデータを確実に除去
-            if image.mode in ('RGBA', 'LA', 'P'):
-                # 透明度を持つ画像の場合はRGBAで保存
-                image_data = image.convert('RGBA')
-            else:
-                image_data = image.convert('RGB')
-            
-            # 出力ファイルの拡張子に応じて保存形式を決定
-            _, ext = os.path.splitext(output_path)
-            
-            if ext.lower() in ['.jpg', '.jpeg']:
-                # JPEG形式で保存（透明度は保持されない）
-                if image_data.mode == 'RGBA':
-                    # 白背景で合成
-                    rgb_image = Image.new('RGB', image_data.size, (255, 255, 255))
-                    rgb_image.paste(image_data, mask=image_data.split()[-1])
-                    rgb_image.save(output_path, 'JPEG', quality=95)
-                else:
-                    image_data.save(output_path, 'JPEG', quality=95)
-            elif ext.lower() == '.png':
-                # PNG形式で保存（透明度も保持）
-                image_data.save(output_path, 'PNG')
-            else:
-                print(f"警告: サポートされていない出力形式です: {ext}")
-                return False
-            
-            print(f"Exifデータを削除しました: {output_path}")
-            return True
-            
-    except FileNotFoundError:
-        print(f"エラー: ファイル '{input_path}' が見つかりません")
-        return False
-    except PermissionError:
-        print(f"エラー: ファイル '{output_path}' への書き込み権限がありません")
-        return False
-    except Exception as e:
-        print(f"エラー: {input_path} の処理中に問題が発生しました: {str(e)}")
-        return False
+OUTPUT_FORMATS = {
+    ".jpg": ("JPEG", ".jpg"),
+    ".jpeg": ("JPEG", ".jpeg"),
+    ".png": ("PNG", ".png"),
+    ".webp": ("WEBP", ".webp"),
+    ".gif": ("GIF", ".gif"),
+    ".tif": ("TIFF", ".tif"),
+    ".tiff": ("TIFF", ".tiff"),
+    ".bmp": ("BMP", ".bmp"),
+}
 
 
-def generate_output_filename(input_path):
-    """
-    入力ファイル名から出力ファイル名を生成する関数
-    例: image.jpg -> image_no_exif.jpg
-    
-    Args:
-        input_path (str): 入力ファイルのパス
-        
-    Returns:
-        str: 出力ファイルのパス
-    """
-    directory = os.path.dirname(input_path)
-    basename = os.path.basename(input_path)
-    name, ext = os.path.splitext(basename)
-    
-    output_filename = f"{name}_no_exif{ext}"
-    return os.path.join(directory, output_filename)
+def clean_frame(frame: Image.Image) -> Image.Image:
+    """EXIFの向きを画素へ反映し、画像情報を持たないコピーを返す。"""
+
+    transposed = ImageOps.exif_transpose(frame)
+    has_alpha = transposed.mode in {"RGBA", "LA"} or "transparency" in transposed.info
+    mode = "RGBA" if has_alpha else transposed.mode
+    cleaned = transposed.convert(mode).copy()
+    cleaned.info.clear()
+    return cleaned
 
 
-def main():
-    """
-    メイン関数：コマンドライン引数を処理してファイルを変換する
-    """
-    # 使用方法を表示
-    if len(sys.argv) < 2:
-        print("使用方法: python exif_remover.py <image_file(s)>")
-        print("例:")
-        print("  python exif_remover.py image.jpg")
-        print("  python exif_remover.py *.jpg")
-        print("  python exif_remover.py image1.png image2.jpg")
-        sys.exit(1)
-    
-    # コマンドライン引数からファイルリストを展開
-    files = []
-    for arg in sys.argv[1:]:
-        # ワイルドカード（*）を含む引数を展開
-        expanded_files = glob.glob(arg)
-        if expanded_files:
-            files.extend(expanded_files)
-        else:
-            # ワイルドカードが展開されない場合はそのまま追加
-            files.append(arg)
-    
-    if not files:
-        print("エラー: 処理する画像ファイルが見つかりません")
-        sys.exit(1)
-    
-    # 処理結果の統計
-    success_count = 0
-    total_count = len(files)
-    
-    print(f"{total_count}個のファイルを処理開始...")
-    print("-" * 50)
-    
-    # 各ファイルを処理
-    for input_path in files:
-        # 出力ファイル名を生成
-        output_path = generate_output_filename(input_path)
-        
-        # 出力ファイルが既に存在する場合の確認
-        if os.path.exists(output_path):
-            print(f"警告: {output_path} は既に存在します。スキップします。")
+def flatten_for_jpeg(image: Image.Image) -> Image.Image:
+    if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, "white")
+        background.paste(rgba, mask=rgba.getchannel("A"))
+        return background
+    return image.convert("RGB")
+
+
+def output_definition(input_path: Path, image: Image.Image) -> tuple[str, str]:
+    suffix = input_path.suffix.lower()
+    if suffix in OUTPUT_FORMATS:
+        return OUTPUT_FORMATS[suffix][0], OUTPUT_FORMATS[suffix][1]
+    if image.format in {"JPEG", "PNG", "WEBP", "GIF", "TIFF", "BMP"}:
+        extension = {
+            "JPEG": ".jpg",
+            "PNG": ".png",
+            "WEBP": ".webp",
+            "GIF": ".gif",
+            "TIFF": ".tiff",
+            "BMP": ".bmp",
+        }[image.format]
+        return image.format, extension
+    return "PNG", ".png"
+
+
+def make_output_path(input_path: Path, output_dir: Path | None, extension: str) -> Path:
+    directory = output_dir if output_dir is not None else input_path.parent
+    return directory / f"{input_path.stem}_no_metadata{extension}"
+
+
+def save_clean_image(input_path: Path, output_path: Path, quality: int) -> None:
+    with Image.open(input_path) as source:
+        output_format, _ = output_definition(input_path, source)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        frames: list[Image.Image] = []
+        durations: list[int] = []
+        for frame in ImageSequence.Iterator(source):
+            frames.append(clean_frame(frame))
+            durations.append(int(frame.info.get("duration", 0) or 0))
+
+        if not frames:
+            raise ValueError("画像のフレームを読み込めません")
+
+        if output_format == "JPEG":
+            frames = [flatten_for_jpeg(frames[0])]
+        elif output_format == "BMP":
+            frames = [frames[0].convert("RGB")]
+        elif output_format == "GIF":
+            frames = [frame.convert("RGBA") for frame in frames]
+
+        save_kwargs: dict[str, object] = {"format": output_format}
+        if output_format == "JPEG":
+            save_kwargs.update({"quality": quality, "optimize": True, "exif": b""})
+        elif output_format == "WEBP":
+            save_kwargs.update({"quality": quality, "method": 6, "exif": b"", "xmp": b""})
+        elif output_format == "PNG":
+            save_kwargs.update({"pnginfo": None})
+        elif output_format == "TIFF":
+            save_kwargs.update({"tiffinfo": {}})
+
+        if output_format in {"GIF", "WEBP"} and len(frames) > 1:
+            save_kwargs.update(
+                {
+                    "save_all": True,
+                    "append_images": frames[1:],
+                    "duration": durations,
+                    "loop": int(source.info.get("loop", 0) or 0),
+                }
+            )
+
+        frames[0].save(output_path, **save_kwargs)
+
+
+def iter_input_paths(arguments: Iterable[str]) -> list[Path]:
+    paths: list[Path] = []
+    for argument in arguments:
+        expanded = glob.glob(argument)
+        paths.extend(Path(path) for path in expanded) if expanded else paths.append(Path(argument))
+    return paths
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="画像を再保存してExif等のメタデータを除去します")
+    parser.add_argument("files", nargs="+", help="入力画像。ワイルドカードも使えます")
+    parser.add_argument("--output-dir", type=Path, help="出力先フォルダ。省略時は入力画像と同じフォルダ")
+    parser.add_argument("--quality", type=int, choices=range(1, 101), default=96, help="JPEGとWebPの画質。既定値は96")
+    parser.add_argument("--overwrite", action="store_true", help="同名の出力ファイルを上書きします")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    paths = iter_input_paths(args.files)
+    if not paths:
+        print("処理する画像が見つかりません", file=sys.stderr)
+        return 2
+
+    success = 0
+    for input_path in paths:
+        if not input_path.is_file():
+            print(f"失敗　ファイルがありません　{input_path}", file=sys.stderr)
             continue
-        
-        # Exif除去処理を実行
-        if remove_exif(input_path, output_path):
-            success_count += 1
-    
-    # 処理結果を表示
-    print("-" * 50)
-    print(f"処理完了: {success_count}/{total_count} ファイルが正常に処理されました")
+        try:
+            with Image.open(input_path) as probe:
+                _, extension = output_definition(input_path, probe)
+            output_path = make_output_path(input_path, args.output_dir, extension)
+            if output_path.resolve() == input_path.resolve():
+                raise ValueError("入力と出力が同じです")
+            if output_path.exists() and not args.overwrite:
+                print(f"スキップ　出力先がすでにあります　{output_path}")
+                continue
+            save_clean_image(input_path, output_path, args.quality)
+            print(f"完了　{input_path}　から　{output_path}")
+            success += 1
+        except Exception as error:
+            print(f"失敗　{input_path}　{error}", file=sys.stderr)
+
+    print(f"処理結果　{success}/{len(paths)}")
+    return 0 if success == len(paths) else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
