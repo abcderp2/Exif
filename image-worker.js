@@ -16,6 +16,7 @@ function fitDimensions(width, height, pixelLimit) {
 
 self.addEventListener("message", async (event) => {
   const data = event.data || {};
+  let bitmap = null;
   try {
     if (typeof OffscreenCanvas === "undefined" || typeof createImageBitmap !== "function") {
       throw new Error("worker unavailable");
@@ -27,7 +28,7 @@ self.addEventListener("message", async (event) => {
       options.resizeHeight = data.resizeHeight;
       options.resizeQuality = "high";
     }
-    const bitmap = await createImageBitmap(data.file, options);
+    bitmap = await createImageBitmap(data.file, options);
     const target = fitDimensions(bitmap.width, bitmap.height, data.maxPixels || 24000000);
     const canvas = new OffscreenCanvas(target.width, target.height);
     const context = canvas.getContext("2d", { alpha: data.outputType !== "image/jpeg" });
@@ -40,9 +41,10 @@ self.addEventListener("message", async (event) => {
     }
     context.drawImage(bitmap, 0, 0, target.width, target.height);
     const blob = await canvas.convertToBlob({ type: data.outputType, quality: data.quality });
-    bitmap.close();
     self.postMessage({ id: data.id, ok: true, blob, width: target.width, height: target.height, scaled: target.scaled });
   } catch (error) {
     self.postMessage({ id: data.id, ok: false, code: "WORKER_ERROR", error: String(error?.message || error || "処理できませんでした") });
+  } finally {
+    if (bitmap) bitmap.close();
   }
 });

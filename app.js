@@ -134,7 +134,7 @@
     const mode = elements.largeImageSelect.value;
     const pixelText = formatPixels(devicePixelBudget);
     if (mode === "safe") {
-      elements.settingsNote.textContent = `JPEGとWebPは再エンコードするため、元と完全に同じ画質にはなりません。PNGは画素を変えずに保存します。大きな画像はこの端末の安全目安 ${pixelText} まで縮小します。`;
+      elements.settingsNote.textContent = `JPEGとWebPは再エンコードするため、元と完全に同じ画質にはなりません。PNGも再エンコードするため、色設定やビット深度などが変わることがあります。大きな画像はこの端末の安全目安 ${pixelText} まで縮小します。`;
     } else {
       elements.settingsNote.textContent = `JPEGとWebPの画質は ${quality} です。元のサイズを優先しますが、端末の上限を超える画像は処理できません。低性能端末では安全設定を推奨します。`;
     }
@@ -983,7 +983,7 @@
     state.previewId = null;
     state.items.forEach(releaseItemOutput);
     state.items = [];
-    terminateWorker(new Error("CANCELLED"));
+    terminateWorker(createCancellationError());
     render();
   }
 
@@ -1001,7 +1001,13 @@
 
   function releaseResources() {
     state.items.forEach(releaseItemOutput);
-    terminateWorker(new Error("CANCELLED"));
+    terminateWorker(createCancellationError());
+  }
+
+  function createCancellationError() {
+    const error = new Error("CANCELLED");
+    error.code = "CANCELLED";
+    return error;
   }
 
   function render() {
