@@ -53,7 +53,7 @@ JPEG と WebP は再エンコードのため、元と完全に同じ画質には
 
 外部 JavaScript、CDN、フォント、分析タグに依存しない
 
-Content Security Policy を HTML に設定する
+Content Security Policy を HTML に設定する。GitHub PagesのHTML内CSPでは、CSP仕様上meta要素で適用されない指示に依存しない
 
 ファイル名と解析結果を innerHTML に入れず、DOM のテキストとして表示する
 
