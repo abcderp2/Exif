@@ -505,6 +505,12 @@
           node.removeAttribute(attribute.name);
           continue;
         }
+        if (attributeName === "xml:base") {
+          throw new Error("外部参照を含むSVGは処理できません");
+        }
+        if (hasUnsafeSvgUrl(value)) {
+          throw new Error("外部参照を含むSVGは処理できません");
+        }
         if (attributeName === "href" || attributeName === "xlink:href") {
           if (!value.startsWith("#")) throw new Error("外部参照を含むSVGは処理できません");
         }
@@ -518,7 +524,16 @@
   }
 
   function hasUnsafeSvgCss(value) {
-    return /url\s*\(|@import|javascript\s*:|@(?:-webkit-)?keyframes\b|(?:^|[;{\s])(?:-webkit-)?(?:animation|transition)(?:-[a-z-]+)?\s*:/i.test(value);
+    return hasUnsafeSvgUrl(value) || /@import|javascript\s*:|@(?:-webkit-)?keyframes\b|(?:^|[;{\s])(?:-webkit-)?(?:animation|transition)(?:-[a-z-]+)?\s*:/i.test(value);
+  }
+
+  function hasUnsafeSvgUrl(value) {
+    const urlPattern = /url\s*\(\s*(["']?)(.*?)\1\s*\)/gi;
+    let match;
+    while ((match = urlPattern.exec(value))) {
+      if (!match[2].trim().startsWith("#")) return true;
+    }
+    return false;
   }
 
   function loadImage(url) {
