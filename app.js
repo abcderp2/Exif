@@ -1,61 +1,34 @@
 (() => {
   "use strict";
 
-  const MAX_FILE_BYTES = 50 * 1024 * 1024;
-  const MAX_TOTAL_BYTES = 150 * 1024 * 1024;
-  const MAX_FILES = 50;
-  const ANALYSIS_BYTES = 4 * 1024 * 1024;
-  const MAX_SAFE_PIXELS = 64 * 1000 * 1000;
-  const MAX_CANVAS_DIMENSION = 16384;
+  const MAX_FILE_BYTES = 32 * 1024 * 1024;
+  const MAX_TOTAL_BYTES = 96 * 1024 * 1024;
+  const MAX_FILES = 20;
+  const MAX_CANVAS_PIXELS = 32 * 1000 * 1000;
+  const MAX_CANVAS_DIMENSION = 8192;
   const WORKER_PATH = "image-worker.js";
 
   const STATUS_LABELS = {
+    analyzing: "分析中",
     waiting: "待機中",
     processing: "処理中",
     success: "完了",
-    error: "失敗"
+    error: "確認が必要"
   };
 
-  const FORMAT_BY_EXTENSION = {
-    jpg: "jpeg",
-    jpeg: "jpeg",
-    jpe: "jpeg",
-    png: "png",
-    webp: "webp",
-    gif: "gif",
-    bmp: "bmp",
-    tif: "tiff",
-    tiff: "tiff",
-    avif: "avif",
-    heic: "heic",
-    heif: "heif",
-    jxl: "jxl",
-    ico: "ico",
-    svg: "svg"
-  };
-
-  const FORMAT_LABELS = {
-    jpeg: "JPEG",
-    png: "PNG",
-    webp: "WebP",
-    gif: "GIF",
-    bmp: "BMP",
-    tiff: "TIFF",
-    avif: "AVIF",
-    heic: "HEIC",
-    heif: "HEIF",
-    jxl: "JPEG XL",
-    ico: "ICO",
-    svg: "SVG",
-    browser: "画像"
+  const OUTPUT_SPECS = {
+    jpeg: { key: "jpeg", type: "image/jpeg", extension: ".jpg", label: "JPEG" },
+    png: { key: "png", type: "image/png", extension: ".png", label: "PNG" },
+    webp: { key: "webp", type: "image/webp", extension: ".webp", label: "WebP" }
   };
 
   const elements = {
     dropZone: document.getElementById("dropZone"),
     fileInput: document.getElementById("fileInput"),
+    outputFormatSelect: document.getElementById("outputFormatSelect"),
     qualitySelect: document.getElementById("qualitySelect"),
     largeImageSelect: document.getElementById("largeImageSelect"),
-    settingsNote: document.getElementById("settings-note"),
+    settingsNote: document.getElementById("settingsNote"),
     queuePanel: document.getElementById("queuePanel"),
     queueCount: document.getElementById("queueCount"),
     queueStatus: document.getElementById("queueStatus"),
@@ -73,6 +46,7 @@
 
   const state = {
     items: [],
+    analyzing: false,
     processing: false,
     runId: 0,
     notice: "",
@@ -82,17 +56,37 @@
     workerRequests: new Map()
   };
 
+  const outputSupport = detectOutputSupport();
   const devicePixelBudget = detectDevicePixelBudget();
 
+  function detectOutputSupport() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    return {
+      jpeg: canvas.toDataURL("image/jpeg").startsWith("data:image/jpeg"),
+      png: canvas.toDataURL("image/png").startsWith("data:image/png"),
+      webp: canvas.toDataURL("image/webp").startsWith("data:image/webp")
+    };
+  }
+
   function detectDevicePixelBudget() {
-    const memory = Number(navigator.deviceMemory || 4);
-    const cores = Number(navigator.hardwareConcurrency || 4);
-    if (memory <= 2 || cores <= 2) return 12 * 1000 * 1000;
-    if (memory <= 4 || cores <= 4) return 24 * 1000 * 1000;
-    return 36 * 1000 * 1000;
+    const memoryValue = Number(navigator.deviceMemory);
+    const coresValue = Number(navigator.hardwareConcurrency);
+    const memory = Number.isFinite(memoryValue) && memoryValue > 0 ? memoryValue : 3;
+    const cores = Number.isFinite(coresValue) && coresValue > 0 ? coresValue : 4;
+    if (memory <= 2 || cores <= 2) return 8 * 1000 * 1000;
+    if (memory <= 4 || cores <= 4) return 12 * 1000 * 1000;
+    return 20 * 1000 * 1000;
   }
 
   function init() {
+    if (!window.ImageMetadata) {
+      showFatalError("分析機能を読み込めませんでした。ページを再読み込みしてください");
+      return;
+    }
+
+    configureOutputOptions();
     elements.dropZone.addEventListener("click", () => elements.fileInput.click());
     elements.fileInput.addEventListener("change", () => {
       addFiles(Array.from(elements.fileInput.files || []));
@@ -113,10 +107,8 @@
       });
     });
 
-    elements.dropZone.addEventListener("drop", (event) => {
-      addFiles(Array.from(event.dataTransfer.files || []));
-    });
-
+    elements.dropZone.addEventListener("drop", (event) => addFiles(Array.from(event.dataTransfer.files || [])));
+    elements.outputFormatSelect.addEventListener("change", updateSettingsNote);
     elements.qualitySelect.addEventListener("change", updateSettingsNote);
     elements.largeImageSelect.addEventListener("change", updateSettingsNote);
     elements.startButton.addEventListener("click", processPending);
@@ -129,61 +121,86 @@
     render();
   }
 
-  function updateSettingsNote() {
-    const quality = Math.round(Number(elements.qualitySelect.value) * 100);
-    const mode = elements.largeImageSelect.value;
-    const pixelText = formatPixels(devicePixelBudget);
-    if (mode === "safe") {
-      elements.settingsNote.textContent = `JPEGとWebPは再エンコードするため、元と完全に同じ画質にはなりません。PNGも再エンコードするため、色設定やビット深度などが変わることがあります。大きな画像はこの端末の安全目安 ${pixelText} まで縮小します。`;
-    } else {
-      elements.settingsNote.textContent = `JPEGとWebPの画質は ${quality} です。元のサイズを優先しますが、端末の上限を超える画像は処理できません。低性能端末では安全設定を推奨します。`;
+  function configureOutputOptions() {
+    const webpOption = elements.outputFormatSelect.querySelector('option[value="webp"]');
+    if (webpOption && !outputSupport.webp) {
+      webpOption.disabled = true;
+      webpOption.textContent = "WebP このブラウザでは保存不可";
     }
   }
 
+  function showFatalError(message) {
+    elements.dropZone.disabled = true;
+    elements.dropZone.querySelector(".drop-zone-title").textContent = message;
+  }
+
+  function updateSettingsNote() {
+    const formatValue = elements.outputFormatSelect.value;
+    const quality = Math.round(Number(elements.qualitySelect.value) * 100);
+    const safeMode = elements.largeImageSelect.value === "safe";
+    const formatText = formatValue === "same" ? "入力と同じ形式" : OUTPUT_SPECS[formatValue]?.label || "選択形式";
+    const sizeText = safeMode
+      ? `大きな画像は、この端末の安全目安である約${formatPixels(devicePixelBudget)}まで縮小します。`
+      : `元の大きさを優先しますが、約${formatPixels(MAX_CANVAS_PIXELS)}または一辺${MAX_CANVAS_DIMENSION}pxを超える画像は処理しません。`;
+    const alphaText = formatValue === "jpeg" ? "透明部分は白になります。" : "";
+    elements.settingsNote.textContent = `${formatText}で保存します。JPEGとWebPの画質は${quality}です。${alphaText}${sizeText}`;
+  }
+
   async function addFiles(files) {
-    if (!files.length) return;
-    const currentBytes = state.items.reduce((sum, item) => sum + item.file.size, 0);
-    let totalBytes = currentBytes;
+    if (!files.length || state.processing || state.analyzing) return;
+    const analysisRunId = ++state.runId;
+    state.analyzing = true;
+    state.notice = "画像の形式と付加情報を確認しています";
+    render();
+
+    let totalBytes = state.items.reduce((sum, item) => sum + item.file.size, 0);
     let accepted = 0;
     const rejected = [];
 
     for (const file of files) {
+      if (state.runId !== analysisRunId) return;
       if (state.items.length >= MAX_FILES) {
         rejected.push(`${file.name}は個数上限を超えています`);
         continue;
       }
-      if (file.size <= 0) {
+      if (!file.size) {
         rejected.push(`${file.name}は空のファイルです`);
         continue;
       }
       if (file.size > MAX_FILE_BYTES) {
-        rejected.push(`${file.name}は1個あたり50MBを超えています`);
+        rejected.push(`${file.name}は32MBを超えています`);
         continue;
       }
       if (totalBytes + file.size > MAX_TOTAL_BYTES) {
-        rejected.push(`${file.name}を加えると合計150MBを超えます`);
+        rejected.push(`${file.name}を加えると合計96MBを超えます`);
         continue;
       }
-
       const key = makeFileKey(file);
       if (state.items.some((item) => item.key === key)) {
         rejected.push(`${file.name}はすでに一覧にあります`);
         continue;
       }
 
-      const format = await detectFormat(file);
-      if (!format) {
-        rejected.push(`${file.name}は画像形式として判定できません`);
+      let detected;
+      try {
+        detected = await ImageMetadata.detectFile(file);
+        if (state.runId !== analysisRunId) return;
+      } catch (error) {
+        detected = null;
+      }
+      if (!detected) {
+        rejected.push(`${file.name}はJPEG、PNG、WebPとして確認できません`);
         continue;
       }
 
-      state.items.push({
+      const item = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         key,
         file,
-        format,
-        status: "waiting",
+        format: detected,
+        status: "analyzing",
         metadata: null,
+        outputMetadata: null,
         outputBlob: null,
         outputUrl: "",
         outputName: "",
@@ -191,67 +208,49 @@
         width: null,
         height: null,
         scaled: false,
-        verification: false,
         duration: 0,
         error: "",
-        warning: ""
-      });
+        warning: buildDetectionWarning(detected)
+      };
+      state.items.push(item);
       totalBytes += file.size;
       accepted += 1;
+      render();
+
+      try {
+        item.metadata = await ImageMetadata.inspectFile(file, detected.key);
+        if (state.runId !== analysisRunId) return;
+        item.status = "waiting";
+      } catch (error) {
+        item.status = "error";
+        item.error = "画像の構造を確認できませんでした";
+      }
+      render();
+      await yieldToBrowser();
     }
 
-    if (accepted) {
-      state.notice = `${accepted}個の画像を待機一覧に追加しました`;
-    }
-    if (rejected.length) {
-      state.notice = rejected.slice(0, 2).join("。 ") + (rejected.length > 2 ? "。ほかにも追加できない画像があります" : "");
-    }
+    if (state.runId !== analysisRunId) return;
+    state.analyzing = false;
+    const messages = [];
+    if (accepted) messages.push(`${accepted}個の画像を追加しました`);
+    if (rejected.length) messages.push(rejected.slice(0, 2).join("。") + (rejected.length > 2 ? "。ほかにも追加できない画像があります" : ""));
+    state.notice = messages.join("。") || "追加できる画像がありませんでした";
     render();
+  }
+
+  function buildDetectionWarning(detected) {
+    const warnings = [];
+    if (detected.extensionMismatch) warnings.push("拡張子とファイル本体の形式が一致しません");
+    if (detected.declaredTypeMismatch) warnings.push("ブラウザが示した種類とファイル本体が一致しません");
+    return warnings.join("。 ");
   }
 
   function makeFileKey(file) {
     return [file.name, file.size, file.lastModified, file.type].join("|");
   }
 
-  async function detectFormat(file) {
-    const header = new Uint8Array(await file.slice(0, Math.min(file.size, 512)).arrayBuffer());
-    const magic = detectMagicFormat(header);
-    if (magic) return { key: magic, label: FORMAT_LABELS[magic] };
-
-    const extension = getExtension(file.name);
-    const fromExtension = FORMAT_BY_EXTENSION[extension];
-    if (fromExtension) return { key: fromExtension, label: FORMAT_LABELS[fromExtension] };
-
-    const mime = String(file.type || "").toLowerCase();
-    if (mime.startsWith("image/")) return { key: "browser", label: mime };
-    return null;
-  }
-
-  function detectMagicFormat(bytes) {
-    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpeg";
-    if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return "png";
-    if (bytes.length >= 6 && /^GIF8[79]a$/.test(ascii(bytes.slice(0, 6)))) return "gif";
-    if (bytes.length >= 12 && ascii(bytes.slice(0, 4)) === "RIFF" && ascii(bytes.slice(8, 12)) === "WEBP") return "webp";
-    if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return "bmp";
-    if (bytes.length >= 4 && ((bytes[0] === 0x49 && bytes[1] === 0x49 && bytes[2] === 0x2a && bytes[3] === 0x00) || (bytes[0] === 0x4d && bytes[1] === 0x4d && bytes[2] === 0x00 && bytes[3] === 0x2a))) return "tiff";
-    if (bytes.length >= 4 && bytes[0] === 0x00 && bytes[1] === 0x00 && (bytes[2] === 0x01 || bytes[2] === 0x02) && bytes[3] === 0x00) return "ico";
-    if (isIsoBmffImage(bytes)) {
-      const brand = ascii(bytes.slice(8, 12)).trim();
-      if (brand === "avif" || brand === "avis") return "avif";
-      if (brand === "heic" || brand === "heix") return "heic";
-      if (brand === "heif" || brand === "heis" || brand === "mif1" || brand === "msf1") return "heif";
-    }
-    const text = decodeText(bytes).replace(/^\uFEFF/, "").trimStart().slice(0, 300).toLowerCase();
-    if (text.startsWith("<svg") || text.startsWith("<?xml") && text.includes("<svg")) return "svg";
-    return null;
-  }
-
-  function isIsoBmffImage(bytes) {
-    return bytes.length >= 12 && ascii(bytes.slice(4, 8)) === "ftyp";
-  }
-
   async function processPending() {
-    if (state.processing) return;
+    if (state.processing || state.analyzing) return;
     const pending = state.items.filter((item) => item.status === "waiting");
     if (!pending.length) {
       state.notice = "待機中の画像がありません";
@@ -267,7 +266,6 @@
     for (const item of pending) {
       if (state.runId !== runId) break;
       await processItem(item, runId);
-      if (state.runId !== runId) break;
       render();
       await yieldToBrowser();
     }
@@ -276,7 +274,9 @@
       state.processing = false;
       const success = state.items.filter((item) => item.status === "success").length;
       const errors = state.items.filter((item) => item.status === "error").length;
-      state.notice = errors ? `処理が完了しました。成功${success}個、確認が必要な画像${errors}個です` : `処理が完了しました。${success}個の画像を確認できます`;
+      state.notice = errors
+        ? `処理が終わりました。保存できる画像は${success}個、確認が必要な画像は${errors}個です`
+        : `${success}個の画像を処理しました`;
       render();
     }
   }
@@ -284,57 +284,71 @@
   async function processItem(item, runId) {
     item.status = "processing";
     item.error = "";
-    item.warning = "";
+    item.outputMetadata = null;
     releaseItemOutput(item);
     render();
     const started = performance.now();
 
     try {
-      const sourceBuffer = await readAnalysisBuffer(item.file);
-      const report = inspectMetadata(sourceBuffer, item.format.key);
-      const plan = makeProcessingPlan(report, item.format.key);
       const spec = chooseOutput(item.format.key);
-      let encoded;
+      if (!outputSupport[spec.key]) throw new Error(`${spec.label}形式で保存できないブラウザです`);
+      const encoded = await encodeRaster(item.file, spec);
+      if (state.runId !== runId) return;
+      if (!encoded.blob || encoded.blob.type !== spec.type) throw new Error(`${spec.label}形式で正しく保存できませんでした`);
 
-      if (item.format.key === "svg") {
-        encoded = await encodeSvg(item.file, spec, plan);
-      } else {
-        encoded = await encodeRaster(item.file, item.format.key, spec, report, plan);
+      const verification = await ImageMetadata.inspectFile(encoded.blob, spec.key);
+      if (verification.sensitive || verification.structureIssues.length) {
+        throw new Error("処理後の安全確認を通過しなかったため、保存用ファイルを破棄しました");
       }
 
-      if (state.runId !== runId) return;
-      const outputKey = formatKeyFromMime(encoded.blob.type || spec.type);
-      const verificationBuffer = await encoded.blob.slice(0, ANALYSIS_BYTES).arrayBuffer();
-      const verification = inspectMetadata(verificationBuffer, outputKey);
-      const actualSpec = resolveActualOutput(encoded.blob.type, spec);
-      item.metadata = report;
+      item.outputMetadata = verification;
       item.outputBlob = encoded.blob;
       item.outputUrl = URL.createObjectURL(encoded.blob);
-      item.outputType = encoded.blob.type || actualSpec.type;
-      item.outputName = makeOutputName(item.file.name, actualSpec.extension);
+      item.outputType = encoded.blob.type;
+      item.outputName = makeOutputName(item.file.name, spec.extension);
       item.width = encoded.width;
       item.height = encoded.height;
-      item.scaled = Boolean(encoded.scaled || plan.scaled);
-      item.verification = !verification.sensitive;
+      item.scaled = encoded.scaled;
       item.duration = performance.now() - started;
-      item.warning = buildOutputWarning(item.format.key, actualSpec, item.scaled, report);
+      item.warning = mergeWarnings(item.warning, buildOutputWarning(item, spec));
       item.status = "success";
       if (!state.previewId) state.previewId = item.id;
     } catch (error) {
       if (state.runId !== runId) return;
+      releaseItemOutput(item);
       item.status = "error";
       item.duration = performance.now() - started;
       item.error = normalizeError(error);
     }
   }
 
-  async function encodeRaster(file, sourceKey, spec, report, plan) {
-    const workerResult = await tryWorkerEncode(file, spec, plan);
-    if (workerResult) return workerResult;
-    return encodeOnMain(file, spec, plan, report.orientation || 1);
+  function chooseOutput(sourceKey) {
+    const selected = elements.outputFormatSelect.value;
+    return OUTPUT_SPECS[selected === "same" ? sourceKey : selected];
   }
 
-  async function tryWorkerEncode(file, spec, plan) {
+  function buildOutputWarning(item, spec) {
+    const warnings = [];
+    if (item.format.key !== spec.key) warnings.push(`${item.format.label}から${spec.label}へ変換しました`);
+    if (spec.key === "jpeg" && item.metadata?.alpha) warnings.push("透明部分を白で合成しました");
+    if (item.metadata?.animated) warnings.push("アニメーションは先頭フレームの静止画になりました");
+    if (item.scaled) warnings.push("端末の安全上限に合わせて縮小しました");
+    if (spec.key === "jpeg" || spec.key === "webp") warnings.push(`画質${Math.round(Number(elements.qualitySelect.value) * 100)}`);
+    if (item.metadata?.entries.some((entry) => !entry.sensitive)) warnings.push("色設定などは再生成により変わる場合があります");
+    return warnings.join("。 ");
+  }
+
+  function mergeWarnings(first, second) {
+    return [first, second].filter(Boolean).join("。 ");
+  }
+
+  async function encodeRaster(file, spec) {
+    const workerResult = await tryWorkerEncode(file, spec);
+    if (workerResult) return workerResult;
+    return encodeOnMain(file, spec);
+  }
+
+  async function tryWorkerEncode(file, spec) {
     if (!window.Worker || !window.OffscreenCanvas || !window.createImageBitmap) return null;
     try {
       return await requestWorker({
@@ -342,12 +356,12 @@
         outputType: spec.type,
         quality: Number(elements.qualitySelect.value),
         maxPixels: getPixelLimit(),
-        resizeWidth: plan.resizeWidth,
-        resizeHeight: plan.resizeHeight,
-        fillWhite: spec.type === "image/jpeg"
+        maxDimension: MAX_CANVAS_DIMENSION,
+        fillWhite: spec.key === "jpeg",
+        allowScale: elements.largeImageSelect.value === "safe"
       });
     } catch (error) {
-      if (error && error.code === "CANCELLED") throw error;
+      if (error?.code === "CANCELLED") throw error;
       return null;
     }
   }
@@ -400,21 +414,13 @@
     state.workerRequests.clear();
   }
 
-  async function encodeOnMain(file, spec, plan, orientation) {
-    let source;
+  async function encodeOnMain(file, spec) {
+    let source = null;
     let sourceUrl = "";
-    let orientedByBitmap = false;
     try {
       if (window.createImageBitmap) {
         try {
-          const options = { imageOrientation: "from-image" };
-          if (plan.resizeWidth && plan.resizeHeight) {
-            options.resizeWidth = plan.resizeWidth;
-            options.resizeHeight = plan.resizeHeight;
-            options.resizeQuality = "high";
-          }
-          source = await createImageBitmap(file, options);
-          orientedByBitmap = true;
+          source = await createImageBitmap(file, { imageOrientation: "from-image" });
         } catch (error) {
           source = null;
         }
@@ -426,29 +432,20 @@
 
       const sourceWidth = source.naturalWidth || source.width;
       const sourceHeight = source.naturalHeight || source.height;
-      const visualWidth = !orientedByBitmap && needsSwappedOrientation(orientation) ? sourceHeight : sourceWidth;
-      const visualHeight = !orientedByBitmap && needsSwappedOrientation(orientation) ? sourceWidth : sourceHeight;
-      const target = fitDimensions(visualWidth, visualHeight, getPixelLimit());
+      if (!sourceWidth || !sourceHeight) throw new Error("画像の大きさを確認できません");
+      const target = fitDimensions(sourceWidth, sourceHeight, getPixelLimit(), MAX_CANVAS_DIMENSION);
       const canvas = document.createElement("canvas");
       canvas.width = target.width;
       canvas.height = target.height;
-      const context = canvas.getContext("2d", { alpha: spec.type !== "image/jpeg" });
-      if (!context) throw new Error("この端末では画像処理用の画面を作れません");
+      const context = canvas.getContext("2d", { alpha: spec.key !== "jpeg" });
+      if (!context) throw new Error("この端末では画像処理用の領域を作れません");
       context.imageSmoothingEnabled = true;
       context.imageSmoothingQuality = "high";
-      if (spec.type === "image/jpeg") {
+      if (spec.key === "jpeg") {
         context.fillStyle = "#ffffff";
         context.fillRect(0, 0, target.width, target.height);
       }
-
-      const scaleX = target.width / visualWidth;
-      const scaleY = target.height / visualHeight;
-      context.save();
-      context.scale(scaleX, scaleY);
-      if (!orientedByBitmap) applyOrientation(context, orientation, sourceWidth, sourceHeight);
-      context.drawImage(source, 0, 0, sourceWidth, sourceHeight);
-      context.restore();
-
+      context.drawImage(source, 0, 0, target.width, target.height);
       const blob = await canvasToBlob(canvas, spec.type, Number(elements.qualitySelect.value));
       return { blob, width: target.width, height: target.height, scaled: target.scaled };
     } finally {
@@ -457,91 +454,12 @@
     }
   }
 
-  async function encodeSvg(file, spec, plan) {
-    const safeText = await sanitizeSvg(file);
-    const safeBlob = new Blob([safeText], { type: "image/svg+xml" });
-    return encodeOnMain(safeBlob, spec, plan, 1);
-  }
-
-  async function sanitizeSvg(file) {
-    const text = await file.text();
-    if (text.length > 5 * 1024 * 1024) throw new Error("SVGが大きすぎます");
-    const documentXml = new DOMParser().parseFromString(text, "image/svg+xml");
-    if (!documentXml.documentElement || documentXml.documentElement.localName.toLowerCase() !== "svg" || documentXml.querySelector("parsererror")) {
-      throw new Error("SVGを安全に読み込めません");
-    }
-
-    const forbidden = new Set(["script", "foreignobject", "iframe", "object", "embed", "audio", "video", "a", "animate", "animatemotion", "animatetransform", "set", "switch"]);
-    const removable = new Set(["metadata", "title", "desc"]);
-    const walker = documentXml.createTreeWalker(documentXml.documentElement, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
-    const nodes = [];
-    let current = walker.currentNode;
-    let count = 0;
-    while (current) {
-      nodes.push(current);
-      count += 1;
-      if (count > 100000) throw new Error("SVGの要素数が多すぎます");
-      current = walker.nextNode();
-    }
-
-    for (const node of nodes) {
-      if (node.nodeType === Node.COMMENT_NODE) {
-        node.parentNode?.removeChild(node);
-        continue;
-      }
-      const name = node.localName.toLowerCase();
-      if (forbidden.has(name)) throw new Error("安全のため、このSVGの動きを無効にしました");
-      if (removable.has(name)) {
-        node.parentNode?.removeChild(node);
-        continue;
-      }
-      if (name === "style" && hasUnsafeSvgCss(node.textContent || "")) {
-        throw new Error("外部参照や動きを含むSVGは安全のため処理できません");
-      }
-      for (const attribute of Array.from(node.attributes)) {
-        const attributeName = attribute.name.toLowerCase();
-        const value = attribute.value.trim();
-        if (attributeName.startsWith("on") || attributeName.startsWith("data-") || attributeName.startsWith("inkscape:") || attributeName.startsWith("sodipodi:")) {
-          node.removeAttribute(attribute.name);
-          continue;
-        }
-        if (attributeName === "xml:base") {
-          throw new Error("外部参照を含むSVGは処理できません");
-        }
-        if (hasUnsafeSvgUrl(value)) {
-          throw new Error("外部参照を含むSVGは処理できません");
-        }
-        if (attributeName === "href" || attributeName === "xlink:href") {
-          if (!value.startsWith("#")) throw new Error("外部参照を含むSVGは処理できません");
-        }
-        if (attributeName === "style" && hasUnsafeSvgCss(value)) {
-          throw new Error("外部参照を含むSVGは処理できません");
-        }
-        if (/javascript\s*:/i.test(value)) throw new Error("安全でないSVGを処理できません");
-      }
-    }
-    return new XMLSerializer().serializeToString(documentXml.documentElement);
-  }
-
-  function hasUnsafeSvgCss(value) {
-    return hasUnsafeSvgUrl(value) || /@import|javascript\s*:|@(?:-webkit-)?keyframes\b|(?:^|[;{\s])(?:-webkit-)?(?:animation|transition)(?:-[a-z-]+)?\s*:/i.test(value);
-  }
-
-  function hasUnsafeSvgUrl(value) {
-    const urlPattern = /url\s*\(\s*(["']?)(.*?)\1\s*\)/gi;
-    let match;
-    while ((match = urlPattern.exec(value))) {
-      if (!match[2].trim().startsWith("#")) return true;
-    }
-    return false;
-  }
-
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const image = new Image();
       image.decoding = "async";
       image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error("画像を読み込めません。ブラウザがこの形式に対応しているか確認してください"));
+      image.onerror = () => reject(new Error("画像を読み込めません"));
       image.src = url;
     });
   }
@@ -550,404 +468,30 @@
     return new Promise((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (blob) resolve(blob);
-        else reject(new Error("この端末では選択した形式で保存できません"));
+        else reject(new Error("選択した形式で保存できません"));
       }, type, quality);
     });
   }
 
-  function makeProcessingPlan(report, sourceKey) {
-    const orientation = report.orientation || 1;
-    const dimensions = report.width && report.height ? { width: report.width, height: report.height } : null;
-    const visual = dimensions && needsSwappedOrientation(orientation) ? { width: dimensions.height, height: dimensions.width } : dimensions;
-    const limit = getPixelLimit();
-    if (visual && (visual.width > MAX_CANVAS_DIMENSION || visual.height > MAX_CANVAS_DIMENSION) && elements.largeImageSelect.value === "original") {
-      throw new Error("画像の一辺が大きすぎます。安全設定に切り替えてやり直してください");
-    }
-    if (visual && visual.width * visual.height > MAX_SAFE_PIXELS && elements.largeImageSelect.value === "original") {
-      throw new Error("画像の画素数が端末の上限を超えています。安全設定に切り替えてやり直してください");
-    }
-    if (!visual) return { scaled: false, resizeWidth: null, resizeHeight: null };
-    const target = fitDimensions(visual.width, visual.height, limit);
-    const scaled = target.scaled || visual.width > MAX_CANVAS_DIMENSION || visual.height > MAX_CANVAS_DIMENSION;
-    return {
-      scaled,
-      resizeWidth: scaled ? target.width : null,
-      resizeHeight: scaled ? target.height : null,
-      sourceKey
-    };
-  }
-
   function getPixelLimit() {
-    return elements.largeImageSelect.value === "safe" ? devicePixelBudget : MAX_SAFE_PIXELS;
+    return elements.largeImageSelect.value === "safe" ? devicePixelBudget : MAX_CANVAS_PIXELS;
   }
 
-  function fitDimensions(width, height, pixelLimit) {
+  function fitDimensions(width, height, pixelLimit, dimensionLimit) {
     let targetWidth = Math.max(1, Math.floor(width));
     let targetHeight = Math.max(1, Math.floor(height));
-    const scaleByPixels = Math.sqrt(pixelLimit / (targetWidth * targetHeight));
-    const scaleByDimension = Math.min(MAX_CANVAS_DIMENSION / targetWidth, MAX_CANVAS_DIMENSION / targetHeight, 1);
+    const pixels = targetWidth * targetHeight;
+    const scaleByPixels = Math.sqrt(pixelLimit / pixels);
+    const scaleByDimension = Math.min(dimensionLimit / targetWidth, dimensionLimit / targetHeight, 1);
     const scale = Math.min(scaleByPixels < 1 ? scaleByPixels : 1, scaleByDimension);
+    if (elements.largeImageSelect.value === "original" && scale < 1) {
+      throw new Error("画像が端末向けの処理上限を超えています。安全設定へ切り替えてください");
+    }
     if (scale < 1) {
       targetWidth = Math.max(1, Math.floor(targetWidth * scale));
       targetHeight = Math.max(1, Math.floor(targetHeight * scale));
     }
     return { width: targetWidth, height: targetHeight, scaled: scale < 0.9999 };
-  }
-
-  function chooseOutput(sourceKey) {
-    if (sourceKey === "jpeg") return { type: "image/jpeg", extension: ".jpg", label: "JPEG" };
-    if (sourceKey === "png") return { type: "image/png", extension: ".png", label: "PNG" };
-    if (sourceKey === "webp") return { type: "image/webp", extension: ".webp", label: "WebP" };
-    if (sourceKey === "gif") return { type: "image/png", extension: ".png", label: "PNG", note: "GIFは先頭フレームを静止画として保存" };
-    if (sourceKey === "svg") return { type: "image/png", extension: ".png", label: "PNG", note: "安全化したSVGをPNGとして保存" };
-    return { type: "image/webp", extension: ".webp", label: "WebP", note: `${FORMAT_LABELS[sourceKey] || "画像"}をWebPとして保存` };
-  }
-
-  function resolveActualOutput(type, spec) {
-    const actualType = String(type || spec.type).toLowerCase();
-    if (actualType === "image/jpeg") return { type: actualType, extension: ".jpg", label: "JPEG" };
-    if (actualType === "image/webp") return { type: actualType, extension: ".webp", label: "WebP" };
-    return { type: "image/png", extension: ".png", label: "PNG" };
-  }
-
-  function buildOutputWarning(sourceKey, actualSpec, scaled, report) {
-    const warnings = [];
-    const chosen = chooseOutput(sourceKey);
-    if (chosen.note) warnings.push(chosen.note);
-    if (actualSpec.type !== chosen.type) warnings.push("端末の保存対応に合わせてPNGに変更");
-    if (scaled) warnings.push("端末の安全上限に合わせて縮小");
-    if (sourceKey === "jpeg" || sourceKey === "webp") warnings.push(`画質設定 ${Math.round(Number(elements.qualitySelect.value) * 100)}`);
-    if (report.animated) warnings.push("アニメーションは先頭フレームのみ");
-    return warnings.join("。 ");
-  }
-
-  async function readAnalysisBuffer(file) {
-    return file.slice(0, Math.min(file.size, ANALYSIS_BYTES)).arrayBuffer();
-  }
-
-  function inspectMetadata(buffer, formatKey) {
-    const report = {
-      entries: [],
-      sensitive: false,
-      orientation: 1,
-      width: null,
-      height: null,
-      animated: false,
-      truncated: buffer.byteLength >= ANALYSIS_BYTES
-    };
-    if (formatKey === "jpeg") inspectJpeg(buffer, report);
-    else if (formatKey === "png") inspectPng(buffer, report);
-    else if (formatKey === "webp") inspectWebp(buffer, report);
-    else if (formatKey === "gif") inspectGif(buffer, report);
-    else if (formatKey === "bmp") inspectBmp(buffer, report);
-    else if (formatKey === "tiff") applyTiffReport(parseTiff(new DataView(buffer), 0, buffer.byteLength), report);
-    return report;
-  }
-
-  function inspectJpeg(buffer, report) {
-    const view = new DataView(buffer);
-    if (view.byteLength < 4 || view.getUint16(0) !== 0xffd8) return;
-    let offset = 2;
-    while (offset + 3 < view.byteLength) {
-      if (view.getUint8(offset) !== 0xff) {
-        offset += 1;
-        continue;
-      }
-      while (offset < view.byteLength && view.getUint8(offset) === 0xff) offset += 1;
-      const marker = view.getUint8(offset);
-      offset += 1;
-      if (marker === 0xda || marker === 0xd9) break;
-      if (marker === 0x01 || marker >= 0xd0 && marker <= 0xd7) continue;
-      if (offset + 2 > view.byteLength) break;
-      const length = view.getUint16(offset);
-      if (length < 2 || offset + length > view.byteLength) break;
-      const dataStart = offset + 2;
-      const dataEnd = offset + length;
-      if (isJpegFrameMarker(marker) && dataStart + 5 < dataEnd) {
-        report.height = view.getUint16(dataStart + 1);
-        report.width = view.getUint16(dataStart + 3);
-      }
-      if (marker === 0xe1) {
-        const prefix = ascii(new Uint8Array(buffer, dataStart, Math.min(32, dataEnd - dataStart)));
-        if (prefix.startsWith("Exif\u0000\u0000")) {
-          applyTiffReport(parseTiff(view, dataStart + 6, dataEnd), report);
-        } else if (/xmp|adobe/i.test(prefix) || ascii(new Uint8Array(buffer, dataStart, Math.min(256, dataEnd - dataStart))).includes("<x:xmpmeta")) {
-          addMetadata(report, "XMP情報", true);
-        } else {
-          addMetadata(report, "アプリ固有情報", true);
-        }
-      } else if (marker === 0xed) {
-        addMetadata(report, "IPTC情報", true);
-      } else if (marker === 0xfe) {
-        addMetadata(report, "コメント", true);
-      } else if (marker === 0xe2) {
-        const prefix = ascii(new Uint8Array(buffer, dataStart, Math.min(16, dataEnd - dataStart)));
-        if (prefix.startsWith("ICC_PROFILE")) addMetadata(report, "色設定", false);
-        else addMetadata(report, "アプリ固有情報", true);
-      } else if (marker === 0xe0) {
-        addMetadata(report, "標準表示情報", false);
-      } else if (marker >= 0xe1 && marker <= 0xef) {
-        addMetadata(report, "アプリ固有情報", true);
-      }
-      offset += length;
-    }
-  }
-
-  function isJpegFrameMarker(marker) {
-    return marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker);
-  }
-
-  function inspectPng(buffer, report) {
-    const view = new DataView(buffer);
-    if (view.byteLength < 33) return;
-    report.width = view.getUint32(16);
-    report.height = view.getUint32(20);
-    let offset = 8;
-    while (offset + 12 <= view.byteLength) {
-      const length = view.getUint32(offset);
-      const type = ascii(new Uint8Array(buffer, offset + 4, 4));
-      if (offset + 12 + length > view.byteLength) break;
-      if (type === "eXIf") addMetadata(report, "Exif情報", true);
-      else if (["tEXt", "zTXt", "iTXt"].includes(type)) addMetadata(report, "説明とコメント", true);
-      else if (type === "tIME") addMetadata(report, "更新日時", true);
-      else if (type === "iCCP" || type === "sRGB" || type === "cHRM" || type === "gAMA") addMetadata(report, "色設定", false);
-      else if (type === "pHYs") addMetadata(report, "解像度設定", false);
-      else if (type[0] === type[0].toLowerCase() && !["IHDR", "IDAT", "IEND"].includes(type)) addMetadata(report, "補助情報", true);
-      offset += 12 + length;
-      if (type === "IEND") break;
-    }
-  }
-
-  function inspectWebp(buffer, report) {
-    const bytes = new Uint8Array(buffer);
-    if (bytes.length < 16 || ascii(bytes.slice(0, 4)) !== "RIFF" || ascii(bytes.slice(8, 12)) !== "WEBP") return;
-    let offset = 12;
-    while (offset + 8 <= bytes.length) {
-      const type = ascii(bytes.slice(offset, offset + 4));
-      const length = readUint32LE(bytes, offset + 4);
-      const dataStart = offset + 8;
-      const dataEnd = Math.min(bytes.length, dataStart + length);
-      if (dataStart + length > bytes.length) break;
-      if (type === "VP8X" && dataEnd >= dataStart + 10) {
-        report.width = 1 + readUint24LE(bytes, dataStart + 4);
-        report.height = 1 + readUint24LE(bytes, dataStart + 7);
-      } else if (type === "VP8 " && dataEnd >= dataStart + 10 && bytes[dataStart + 3] === 0x9d && bytes[dataStart + 4] === 0x01 && bytes[dataStart + 5] === 0x2a) {
-        report.width = readUint16LE(bytes, dataStart + 6) & 0x3fff;
-        report.height = readUint16LE(bytes, dataStart + 8) & 0x3fff;
-      } else if (type === "VP8L" && dataEnd >= dataStart + 5 && bytes[dataStart] === 0x2f) {
-        const widthBits = bytes[dataStart + 1] | bytes[dataStart + 2] << 8;
-        const heightBits = (bytes[dataStart + 2] >> 6) | bytes[dataStart + 3] << 2 | bytes[dataStart + 4] << 10;
-        report.width = 1 + (widthBits & 0x3fff);
-        report.height = 1 + (heightBits & 0x3fff);
-      } else if (type === "EXIF") {
-        const exifStart = startsWithBytes(bytes, dataStart, [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]) ? dataStart + 6 : dataStart;
-        applyTiffReport(parseTiff(new DataView(buffer), exifStart, dataEnd), report);
-      } else if (type === "XMP ") addMetadata(report, "XMP情報", true);
-      else if (type === "ICCP") addMetadata(report, "色設定", false);
-      else if (type === "ANIM" || type === "ANMF") report.animated = true;
-      else if (type === "LIST") addMetadata(report, "アプリ固有情報", true);
-      offset = dataEnd + (length % 2);
-    }
-  }
-
-  function inspectGif(buffer, report) {
-    const bytes = new Uint8Array(buffer);
-    if (bytes.length < 13) return;
-    report.width = readUint16LE(bytes, 6);
-    report.height = readUint16LE(bytes, 8);
-    let offset = 13;
-    const packed = bytes[10];
-    if (packed & 0x80) offset += 3 * (2 ** ((packed & 0x07) + 1));
-    let frames = 0;
-    while (offset < bytes.length) {
-      const marker = bytes[offset++];
-      if (marker === 0x3b) break;
-      if (marker === 0x2c) {
-        frames += 1;
-        if (offset + 9 > bytes.length) break;
-        const imagePacked = bytes[offset + 8];
-        offset += 9;
-        if (imagePacked & 0x80) offset += 3 * (2 ** ((imagePacked & 0x07) + 1));
-        offset = skipGifSubBlocks(bytes, offset);
-      } else if (marker === 0x21) {
-        const label = bytes[offset++];
-        if (label === 0xfe) addMetadata(report, "コメント", true);
-        if (label === 0xff) {
-          if (offset >= bytes.length) break;
-          const blockSize = bytes[offset];
-          const application = ascii(bytes.slice(offset + 1, offset + 1 + Math.min(blockSize, 11)));
-          if (/xmp|comment|meta/i.test(application)) addMetadata(report, "アプリ固有情報", true);
-        }
-        offset = skipGifSubBlocks(bytes, offset);
-      } else {
-        break;
-      }
-    }
-    report.animated = frames > 1;
-  }
-
-  function skipGifSubBlocks(bytes, offset) {
-    while (offset < bytes.length) {
-      const size = bytes[offset++];
-      if (size === 0) break;
-      offset += size;
-    }
-    return offset;
-  }
-
-  function inspectBmp(buffer, report) {
-    const bytes = new Uint8Array(buffer);
-    if (bytes.length < 26) return;
-    report.width = Math.abs(readInt32LE(bytes, 18));
-    report.height = Math.abs(readInt32LE(bytes, 22));
-  }
-
-  function addMetadata(report, label, sensitive) {
-    if (!report.entries.some((entry) => entry.label === label)) report.entries.push({ label, sensitive });
-    if (sensitive) report.sensitive = true;
-  }
-
-  function parseTiff(view, base, end) {
-    const result = { tags: new Set(), orientation: 1, width: null, height: null };
-    if (base < 0 || base + 8 > end || end > view.byteLength) return result;
-    const order = view.getUint16(base);
-    if (order !== 0x4949 && order !== 0x4d4d) return result;
-    const little = order === 0x4949;
-    const get16 = (offset) => view.getUint16(offset, little);
-    const get32 = (offset) => view.getUint32(offset, little);
-    if (get16(base + 2) !== 42) return result;
-    const visited = new Set();
-    const typeSizes = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
-
-    function readValue(entry, type, count) {
-      const size = typeSizes[type];
-      if (!size || count <= 0 || count > 100000) return null;
-      const total = size * count;
-      const pointer = total <= 4 ? entry + 8 : base + get32(entry + 8);
-      if (pointer < base || pointer + total > end) return null;
-      if (type === 2 || type === 7) {
-        const text = ascii(new Uint8Array(view.buffer, pointer, Math.min(total, 256))).replace(/\u0000.*$/, "");
-        return text;
-      }
-      if (type === 3) return get16(pointer);
-      if (type === 4 || type === 9) return get32(pointer);
-      return null;
-    }
-
-    function walk(relativeOffset, depth) {
-      if (depth > 5 || visited.has(relativeOffset)) return;
-      const ifd = base + relativeOffset;
-      if (ifd < base || ifd + 2 > end) return;
-      visited.add(relativeOffset);
-      const count = get16(ifd);
-      if (count > 1000 || ifd + 2 + count * 12 + 4 > end) return;
-      for (let index = 0; index < count; index += 1) {
-        const entry = ifd + 2 + index * 12;
-        const tag = get16(entry);
-        const type = get16(entry + 2);
-        const valueCount = get32(entry + 4);
-        const value = readValue(entry, type, valueCount);
-        result.tags.add(tag);
-        if (tag === 0x0112 && typeof value === "number" && value >= 1 && value <= 8) result.orientation = value;
-        if (tag === 0x0100 && typeof value === "number") result.width = value;
-        if (tag === 0x0101 && typeof value === "number") result.height = value;
-        if ((tag === 0x8769 || tag === 0x8825 || tag === 0x014a) && typeof value === "number") walk(value, depth + 1);
-      }
-    }
-
-    const firstIfd = get32(base + 4);
-    walk(firstIfd, 0);
-    return result;
-  }
-
-  function applyTiffReport(tiff, report) {
-    if (!tiff) return;
-    if (tiff.width && tiff.height) {
-      report.width = report.width || tiff.width;
-      report.height = report.height || tiff.height;
-    }
-    report.orientation = tiff.orientation || report.orientation || 1;
-    const tags = tiff.tags || new Set();
-    if (tags.has(0x8825)) addMetadata(report, "GPS位置情報", true);
-    if (tags.has(0x9003) || tags.has(0x9004) || tags.has(0x0132)) addMetadata(report, "撮影日時", true);
-    if (tags.has(0x010f) || tags.has(0x0110) || tags.has(0x0131) || tags.has(0xa433) || tags.has(0xa434)) addMetadata(report, "機種とソフトウェア", true);
-    if (tags.has(0x013b) || tags.has(0x8298)) addMetadata(report, "作者と著作権", true);
-    if (tags.has(0x9286) || tags.has(0xa420)) addMetadata(report, "ユーザーコメント", true);
-    if (tags.size && !report.entries.length) addMetadata(report, "Exif付加情報", true);
-  }
-
-  function readUint16LE(bytes, offset) {
-    return offset + 1 < bytes.length ? bytes[offset] | bytes[offset + 1] << 8 : 0;
-  }
-
-  function readInt32LE(bytes, offset) {
-    return offset + 3 < bytes.length ? (bytes[offset] | bytes[offset + 1] << 8 | bytes[offset + 2] << 16 | bytes[offset + 3] << 24) : 0;
-  }
-
-  function readUint32LE(bytes, offset) {
-    return offset + 3 < bytes.length ? (bytes[offset] | bytes[offset + 1] << 8 | bytes[offset + 2] << 16 | bytes[offset + 3] << 24) >>> 0 : 0;
-  }
-
-  function readUint24LE(bytes, offset) {
-    return offset + 2 < bytes.length ? bytes[offset] | bytes[offset + 1] << 8 | bytes[offset + 2] << 16 : 0;
-  }
-
-  function startsWithBytes(bytes, offset, prefix) {
-    return prefix.every((value, index) => bytes[offset + index] === value);
-  }
-
-  function ascii(bytes) {
-    let result = "";
-    for (const byte of bytes) result += byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : String.fromCharCode(byte);
-    return result;
-  }
-
-  function decodeText(bytes) {
-    try {
-      return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-    } catch (error) {
-      return ascii(bytes);
-    }
-  }
-
-  function needsSwappedOrientation(orientation) {
-    return orientation >= 5 && orientation <= 8;
-  }
-
-  function applyOrientation(context, orientation, width, height) {
-    switch (orientation) {
-      case 2:
-        context.translate(width, 0);
-        context.scale(-1, 1);
-        break;
-      case 3:
-        context.translate(width, height);
-        context.rotate(Math.PI);
-        break;
-      case 4:
-        context.translate(0, height);
-        context.scale(1, -1);
-        break;
-      case 5:
-        context.rotate(0.5 * Math.PI);
-        context.scale(1, -1);
-        break;
-      case 6:
-        context.translate(height, 0);
-        context.rotate(0.5 * Math.PI);
-        break;
-      case 7:
-        context.translate(height, 0);
-        context.rotate(0.5 * Math.PI);
-        context.scale(-1, 1);
-        break;
-      case 8:
-        context.translate(0, width);
-        context.rotate(-0.5 * Math.PI);
-        break;
-      default:
-        break;
-    }
   }
 
   function handleResultAction(event) {
@@ -957,27 +501,55 @@
     if (!item) return;
     const action = button.dataset.action;
     if (action === "retry") {
+      releaseItemOutput(item);
       item.status = "waiting";
       item.error = "";
-      state.notice = `${item.file.name}を待機一覧に戻しました`;
+      item.outputMetadata = null;
+      state.notice = `${item.file.name}を待機中へ戻しました`;
       render();
-      processPending();
     } else if (action === "remove") {
       removeItem(item);
     } else if (action === "preview") {
       state.previewId = item.id;
-      state.notice = `${item.outputName}をプレビューしています`;
+      state.notice = `${item.outputName}を表示しています`;
       render();
+    } else if (action === "report") {
+      downloadAnalysisReport(item);
     }
   }
 
   function removeItem(item) {
-    if (state.processing) return;
+    if (state.processing || state.analyzing) return;
     releaseItemOutput(item);
     state.items = state.items.filter((candidate) => candidate.id !== item.id);
     if (state.previewId === item.id) state.previewId = null;
     state.notice = `${item.file.name}を一覧から外しました`;
     render();
+  }
+
+  function downloadAnalysisReport(item) {
+    if (!item.metadata) return;
+    const report = ImageMetadata.toSafeObject(item.file, item.metadata);
+    if (item.outputBlob && item.outputMetadata) {
+      report.output = {
+        name: item.outputName,
+        type: item.outputType,
+        size: item.outputBlob.size,
+        width: item.width,
+        height: item.height,
+        metadataCheckPassed: !item.outputMetadata.sensitive && item.outputMetadata.structureIssues.length === 0
+      };
+    }
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = makeReportName(item.file.name);
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function downloadAll() {
@@ -992,20 +564,21 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
-      }, index * 350);
+      }, index * 400);
     });
-    state.notice = "完了分の保存を順番に開始しました。端末によっては保存の確認が表示されます";
+    state.notice = "完了した画像の保存を順番に開始しました。端末によっては保存確認が表示されます";
     render();
   }
 
   function resetAll() {
     state.runId += 1;
     state.processing = false;
-    state.notice = "一覧を空にしました。新しい画像を選べます";
+    state.analyzing = false;
     state.previewId = null;
     state.items.forEach(releaseItemOutput);
     state.items = [];
     terminateWorker(createCancellationError());
+    state.notice = "一覧を空にしました。新しい画像を選べます";
     render();
   }
 
@@ -1037,25 +610,36 @@
     const successCount = items.filter((item) => item.status === "success").length;
     const completedCount = items.filter((item) => item.status === "success" || item.status === "error").length;
     const waitingCount = items.filter((item) => item.status === "waiting").length;
+    const analyzingCount = items.filter((item) => item.status === "analyzing").length;
     const percent = items.length ? Math.round(completedCount / items.length * 100) : 0;
+    const busy = state.processing || state.analyzing;
 
     elements.queuePanel.hidden = items.length === 0;
     elements.resultsPanel.hidden = items.length === 0;
     elements.queueCount.textContent = `${items.length}個`;
-    elements.queueStatus.textContent = state.processing ? `${completedCount}/${items.length}個を処理しました` : state.notice || (waitingCount ? `${waitingCount}個が待機中です` : "画像を追加してください");
+    elements.queueStatus.textContent = state.processing
+      ? `${completedCount}/${items.length}個を処理しました`
+      : state.analyzing || analyzingCount
+        ? "画像の形式と付加情報を確認しています"
+        : state.notice || (waitingCount ? `${waitingCount}個が処理を待っています` : "画像を追加してください");
     elements.progressBar.style.width = `${percent}%`;
     elements.progressPercent.textContent = `${percent}%`;
-    elements.startButton.disabled = state.processing || waitingCount === 0;
-    elements.startButton.textContent = state.processing ? "処理中" : waitingCount ? `処理を開始（${waitingCount}個）` : "処理済み";
-    elements.downloadAllButton.disabled = state.processing || successCount === 0;
-    elements.resetButton.textContent = state.processing ? "中止してやり直す" : "やり直す";
+    elements.startButton.disabled = busy || waitingCount === 0;
+    elements.startButton.textContent = state.processing ? "処理中" : waitingCount ? `処理を開始 ${waitingCount}個` : "処理済み";
+    elements.downloadAllButton.disabled = busy || successCount === 0;
+    elements.resetButton.textContent = busy ? "中止してやり直す" : "やり直す";
+    elements.outputFormatSelect.disabled = busy;
+    elements.qualitySelect.disabled = busy;
+    elements.largeImageSelect.disabled = busy;
+    elements.fileInput.disabled = busy;
+    elements.dropZone.disabled = busy;
 
     elements.resultsList.replaceChildren(...items.map(renderResultItem));
     const previewItem = items.find((item) => item.id === state.previewId && item.status === "success") || items.find((item) => item.status === "success");
     elements.previewPanel.hidden = !previewItem;
     if (previewItem) {
       if (elements.previewImage.src !== previewItem.outputUrl) elements.previewImage.src = previewItem.outputUrl;
-      elements.previewCaption.textContent = `${previewItem.outputName}。${previewItem.width} × ${previewItem.height}。保存前に画像の見た目を確認できます`;
+      elements.previewCaption.textContent = `${previewItem.outputName}。${previewItem.width} × ${previewItem.height}。保存前に見た目を確認できます`;
     } else {
       elements.previewImage.removeAttribute("src");
       elements.previewCaption.textContent = "";
@@ -1066,7 +650,6 @@
     const article = document.createElement("article");
     article.className = "result-item";
     article.dataset.status = item.status;
-    article.dataset.id = item.id;
     article.setAttribute("role", "listitem");
 
     const top = document.createElement("div");
@@ -1080,38 +663,34 @@
     top.append(name, badge);
     article.appendChild(top);
 
-    const meta = document.createElement("div");
-    meta.className = "result-meta";
-    meta.textContent = `${item.format.label}　${formatBytes(item.file.size)}`;
-    if (item.width && item.height) meta.append(`　${item.width} × ${item.height}`);
-    article.appendChild(meta);
+    const baseMeta = document.createElement("p");
+    baseMeta.className = "result-meta";
+    const dimensions = item.metadata?.width && item.metadata?.height ? `　${item.metadata.width} × ${item.metadata.height}` : "";
+    baseMeta.textContent = `${item.format.label}　${formatBytes(item.file.size)}${dimensions}`;
+    article.appendChild(baseMeta);
+
+    if (item.metadata) article.appendChild(renderAnalysisDetails(item));
 
     if (item.status === "success") {
-      const detail = document.createElement("p");
-      detail.className = "result-detail";
-      detail.append("出力 ");
+      const output = document.createElement("p");
+      output.className = "result-detail";
+      output.append("出力 ");
       const strong = document.createElement("strong");
       strong.textContent = item.outputName;
-      detail.append(strong, `　${formatBytes(item.outputBlob?.size || 0)}　${formatDuration(item.duration)}`);
-      article.appendChild(detail);
+      output.append(strong, `　${formatBytes(item.outputBlob?.size || 0)}　${formatDuration(item.duration)}`);
+      article.appendChild(output);
 
-      const verification = document.createElement("p");
-      verification.className = "result-message";
-      verification.textContent = item.verification ? "標準解析で個人情報領域が残っていないことを確認しました" : "出力の自動確認が十分でないため、保存前に内容を確認してください";
-      article.appendChild(verification);
+      const verified = document.createElement("p");
+      verified.className = "result-message success-message";
+      verified.textContent = "処理後の形式構造を再確認し、個人情報領域がないことを確認しました";
+      article.appendChild(verified);
+    }
 
-      if (item.metadata) {
-        const metadata = document.createElement("p");
-        metadata.className = "result-message";
-        metadata.textContent = metadataSummary(item.metadata);
-        article.appendChild(metadata);
-      }
-      if (item.warning) {
-        const warning = document.createElement("p");
-        warning.className = "result-warning";
-        warning.textContent = item.warning;
-        article.appendChild(warning);
-      }
+    if (item.warning) {
+      const warning = document.createElement("p");
+      warning.className = "result-warning";
+      warning.textContent = item.warning;
+      article.appendChild(warning);
     }
 
     if (item.status === "error") {
@@ -1128,18 +707,74 @@
       download.className = "result-action primary";
       download.href = item.outputUrl;
       download.download = item.outputName;
-      download.textContent = "保存";
+      download.rel = "noopener";
+      download.textContent = "画像を保存";
       actions.appendChild(download);
       actions.appendChild(makeActionButton("プレビュー", "preview", item.id, "secondary"));
-      actions.appendChild(makeActionButton("もう一度処理", "retry", item.id, "quiet"));
-    } else if (item.status === "error") {
-      actions.appendChild(makeActionButton("もう一度処理", "retry", item.id, "secondary"));
-      actions.appendChild(makeActionButton("一覧から外す", "remove", item.id, "quiet"));
+      actions.appendChild(makeActionButton("分析結果を保存", "report", item.id, "quiet"));
+      actions.appendChild(makeActionButton("設定を変えて再処理", "retry", item.id, "quiet"));
     } else if (item.status === "waiting") {
+      actions.appendChild(makeActionButton("分析結果を保存", "report", item.id, "secondary"));
+      actions.appendChild(makeActionButton("一覧から外す", "remove", item.id, "quiet"));
+    } else if (item.status === "error") {
+      if (item.metadata) actions.appendChild(makeActionButton("分析結果を保存", "report", item.id, "secondary"));
+      actions.appendChild(makeActionButton("もう一度処理", "retry", item.id, "secondary"));
       actions.appendChild(makeActionButton("一覧から外す", "remove", item.id, "quiet"));
     }
     if (actions.children.length) article.appendChild(actions);
     return article;
+  }
+
+  function renderAnalysisDetails(item) {
+    const report = item.metadata;
+    const details = document.createElement("details");
+    details.className = "analysis-details";
+    const summary = document.createElement("summary");
+    summary.textContent = report.sensitive ? "分析結果　付加情報あり" : "分析結果　個人情報領域なし";
+    details.appendChild(summary);
+
+    const overview = document.createElement("p");
+    overview.className = "analysis-summary";
+    overview.textContent = ImageMetadata.summary(report);
+    details.appendChild(overview);
+
+    const grid = document.createElement("dl");
+    grid.className = "analysis-grid";
+    appendDefinition(grid, "形式", report.formatLabel);
+    appendDefinition(grid, "大きさ", report.width && report.height ? `${report.width} × ${report.height}` : "画像処理時に確認");
+    appendDefinition(grid, "透明部分", report.alpha ? "あり" : "検出なし");
+    appendDefinition(grid, "アニメーション", report.animated ? "あり" : "検出なし");
+    appendDefinition(grid, "構造確認", report.structureIssues.length ? "注意あり" : report.scanComplete ? "完了" : "一部省略");
+    details.appendChild(grid);
+
+    if (report.entries.length) {
+      const chips = document.createElement("div");
+      chips.className = "metadata-chips";
+      report.entries.forEach((entry) => {
+        const chip = document.createElement("span");
+        chip.className = entry.sensitive ? "metadata-chip sensitive" : "metadata-chip display";
+        chip.textContent = entry.count > 1 ? `${entry.label} ${entry.count}件` : entry.label;
+        chip.title = entry.detail;
+        chips.appendChild(chip);
+      });
+      details.appendChild(chips);
+    }
+
+    [...report.structureIssues, ...report.warnings].forEach((message) => {
+      const note = document.createElement("p");
+      note.className = "analysis-note";
+      note.textContent = message;
+      details.appendChild(note);
+    });
+    return details;
+  }
+
+  function appendDefinition(list, termText, descriptionText) {
+    const term = document.createElement("dt");
+    term.textContent = termText;
+    const description = document.createElement("dd");
+    description.textContent = descriptionText;
+    list.append(term, description);
   }
 
   function makeActionButton(label, action, id, style) {
@@ -1152,31 +787,23 @@
     return button;
   }
 
-  function metadataSummary(report) {
-    if (!report.entries.length) return "標準解析で個人情報に当たる領域は見つかりませんでした";
-    const labels = report.entries.map((entry) => entry.label).slice(0, 4).join("、");
-    return report.sensitive ? `入力から検出した領域　${labels}。出力では画素から再生成しています` : `入力には表示用の付加情報がありました　${labels}`;
-  }
-
-  function formatKeyFromMime(mime) {
-    const value = String(mime || "").toLowerCase();
-    if (value === "image/jpeg") return "jpeg";
-    if (value === "image/png") return "png";
-    if (value === "image/webp") return "webp";
-    if (value === "image/gif") return "gif";
-    if (value === "image/bmp") return "bmp";
-    if (value === "image/tiff") return "tiff";
-    return "browser";
-  }
-
   function makeOutputName(name, extension) {
-    const base = String(name || "image").replace(/\.[^/.]+$/, "").normalize("NFKC").replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "_").replace(/\s+/g, " ").trim().slice(0, 96) || "image";
-    return `${base}-no-metadata${extension}`;
+    const base = safeBaseName(name);
+    return `${base}-clean${extension}`;
   }
 
-  function getExtension(name) {
-    const match = String(name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
-    return match ? match[1] : "";
+  function makeReportName(name) {
+    return `${safeBaseName(name)}-analysis.json`;
+  }
+
+  function safeBaseName(name) {
+    return String(name || "image")
+      .replace(/\.[^/.]+$/, "")
+      .normalize("NFKC")
+      .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 96) || "image";
   }
 
   function formatBytes(bytes) {
@@ -1198,8 +825,8 @@
 
   function normalizeError(error) {
     const message = String(error?.message || error || "処理できませんでした");
-    if (/memory|allocation|canvas|too large|大きすぎ|画素数|上限/i.test(message)) return `${message}。安全設定に切り替えるか、画像を小さくしてやり直してください`;
-    if (/decode|読み込|形式|unsupported|not supported/i.test(message)) return "このブラウザでは画像を読み込めません。別のブラウザか、対応形式へ変換してからやり直してください";
+    if (/memory|allocation|canvas|大き|画素|上限/i.test(message)) return `${message}。安全設定に切り替えるか、小さい画像でやり直してください`;
+    if (/decode|読み込|形式|unsupported|not supported/i.test(message)) return "このブラウザでは画像を読み込めません。JPEG、PNG、WebPの別形式で保存し直してから試してください";
     return message;
   }
 
