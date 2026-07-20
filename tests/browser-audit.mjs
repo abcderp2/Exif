@@ -97,7 +97,7 @@ async function testInvalidFile(page) {
     type: "image/jpeg",
     bytes: Array.from(new TextEncoder().encode("not an image"))
   });
-  await page.waitForFunction(() => document.querySelector("#queueStatus")?.textContent?.includes("追加できる画像がありませんでした"));
+  await page.waitForFunction(() => document.querySelector("#queueStatus")?.textContent?.includes("JPEG、PNG、WebPとして確認できません"));
   assert.equal(await page.locator(".result-item").count(), 0);
 }
 
@@ -108,9 +108,10 @@ async function testInputDetection(page) {
     ["image/webp", "source.webp"]
   ];
 
-  for (const [mime, name] of inputs) {
+  for (let index = 0; index < inputs.length; index += 1) {
+    const [mime, name] = inputs[index];
     await setCanvasFile(page, { mime, name, width: 32, height: 24, alpha: mime !== "image/jpeg" });
-    await waitForReadyItems(page, inputs.indexOf(inputs.find((entry) => entry[1] === name)) + 1);
+    await waitForReadyItems(page, index + 1);
   }
 
   const labels = await page.locator(".result-meta").allTextContents();
