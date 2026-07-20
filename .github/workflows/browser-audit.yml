@@ -26,15 +26,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Run unit checks
         run: npm run verify
 
       - name: Install audit browser
         run: |
-          npm install --no-save --no-package-lock @playwright/test@1.55.0
-          npx playwright install --with-deps chromium
+          npm install --no-save --no-package-lock @playwright/test@1.55.0 > /tmp/npm-audit-install.log 2>&1
+          npx playwright install --with-deps chromium > /tmp/playwright-install.log 2>&1
 
       - name: Start local site
         run: |
