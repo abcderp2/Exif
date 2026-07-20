@@ -6,12 +6,14 @@ const targets = [
   {
     name: "変更ブランチ",
     url: process.env.AUDIT_LOCAL_URL || "http://127.0.0.1:8000/",
-    requireDisclaimer: true
+    requireDisclaimer: true,
+    requireMinimalCsp: true
   },
   {
     name: "公開サイト",
     url: process.env.AUDIT_LIVE_URL || "https://abcderp2.github.io/Exif/",
-    requireDisclaimer: true
+    requireDisclaimer: true,
+    requireMinimalCsp: false
   }
 ];
 
@@ -59,6 +61,13 @@ async function auditTarget(target) {
   const csp = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute("content");
   assert(csp?.includes("connect-src 'none'"), `${target.name}のCSPで外部通信が禁止されていません`);
   assert(csp?.includes("object-src 'none'"), `${target.name}のCSPでobjectが禁止されていません`);
+
+  if (target.requireMinimalCsp) {
+    assert(csp?.includes("img-src 'self' blob:"), `${target.name}のCSPで画像の許可範囲を確認できません`);
+    assert(!csp?.includes("img-src 'self' blob: data:"), `${target.name}のCSPが不要なdata URL画像を許可しています`);
+    assert(csp?.includes("worker-src 'self'"), `${target.name}のCSPでWorkerの許可範囲を確認できません`);
+    assert(!csp?.includes("worker-src 'self' blob:"), `${target.name}のCSPが不要なblob Workerを許可しています`);
+  }
 
   if (target.requireDisclaimer) {
     const bodyText = await page.locator("body").innerText();
