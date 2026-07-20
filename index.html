@@ -8,7 +8,7 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'none'; font-src 'self'; media-src 'self' blob:; manifest-src 'self';">
   <title>画像メタデータクリーナー</title>
-  <meta name="description" content="JPEG、PNG、WebPを端末内だけで相互変換し、Exif、GPS、撮影日時などの付加情報を引き継がない画像を作ります。">
+  <meta name="description" content="JPEG、PNG、WebPを端末内だけで相互変換し、Exif、GPS、撮影日時などの付加情報を引き継がない画像を作る無保証の無料ツールです。">
   <link rel="stylesheet" href="styles.css">
   <script src="metadata.js" defer></script>
   <script src="app.js" defer></script>
@@ -167,10 +167,33 @@
         </article>
       </div>
     </section>
+
+    <section class="plain-note" aria-labelledby="disclaimerTitle">
+      <h2 id="disclaimerTitle">免責事項</h2>
+      <div class="notice-grid">
+        <article>
+          <h3>一切保証しません</h3>
+          <p>このサイトとソフトウェアは現状のまま提供されます。運営者は、動作、正確性、安全性、完全性、継続性、特定目的への適合性、権利非侵害、付加情報の完全な除去について、明示または黙示を問わず一切保証しません。</p>
+        </article>
+        <article>
+          <h3>利用者が最終確認します</h3>
+          <p>処理前の原本を別に保管し、処理後の画像、形式、画質、付加情報を利用者自身で確認してください。このサイトの利用と保存したファイルの使用は、利用者自身の判断と自己の責任で行ってください。</p>
+        </article>
+        <article>
+          <h3>損失への責任</h3>
+          <p>このサイトの利用または利用不能、変換結果、データ消失、公開、送信、第三者サービスでの使用から生じた損害や損失について、運営者は適用法令で認められる最大限の範囲で責任を負いません。</p>
+        </article>
+        <article>
+          <h3>重要用途には単独で使わない</h3>
+          <p>証拠、医療、法務、報道、研究、業務上の重要データには、このサイトだけを最終確認手段として使用せず、別の信頼できる方法でも検証してください。</p>
+        </article>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">
-    <p>静的なブラウザアプリです。画像送信、広告、アクセス解析、Cookie保存を行いません。</p>
+    <p>静的なブラウザアプリです。画像送信、広告、アクセス解析、Cookie保存を行いません。このサイトは一切保証なく提供されます。</p>
+    <p><a class="text-link" href="#disclaimerTitle">利用前に免責事項を確認する</a></p>
     <p><a class="text-link" href="https://github.com/abcderp2/Exif" target="_blank" rel="noopener noreferrer">GitHubで保守方法と制限を確認する</a></p>
   </footer>
 </body>
