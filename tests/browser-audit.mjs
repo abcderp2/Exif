@@ -11,7 +11,7 @@ const targets = [
   {
     name: "公開サイト",
     url: process.env.AUDIT_LIVE_URL || "https://abcderp2.github.io/Exif/",
-    requireDisclaimer: false
+    requireDisclaimer: true
   }
 ];
 
