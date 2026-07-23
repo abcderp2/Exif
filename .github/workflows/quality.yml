@@ -8,16 +8,26 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   static-checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
       - name: Check JavaScript syntax
         run: |
           node --check app.js
+          node --check metadata.js
           node --check image-worker.js
+      - name: Run npm verification
+        run: npm run verify
       - name: Check Python syntax
         run: python3 -m py_compile exif_remover.py
       - name: Check required files and local references
@@ -26,6 +36,7 @@ jobs:
           test -f index.html
           test -f styles.css
           test -f app.js
+          test -f metadata.js
           test -f image-worker.js
           grep -Fq 'styles.css' index.html
           grep -Fq 'app.js' index.html
