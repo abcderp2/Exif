@@ -62,6 +62,14 @@ JPEGとWebPは再圧縮されます。画質は96、92、84から選べます。
 
 古いブラウザやOSを含む、すべての端末で同じ動作を保証するものではありません。WebP保存、Worker、複数ダウンロードなどはブラウザの機能に依存します。利用できない出力形式は画面上で選択できない状態になります。
 
+## 検索とAIクローラー
+
+HTMLでは検索エンジンによるインデックスとリンク追跡を許可しています。robots.txtには、一般クローラー、OAI-SearchBot、GPTBot、Claude-User、Claude-SearchBot、ClaudeBot、Google-Extendedへの許可を明記しています。
+
+このリポジトリはGitHub Pagesのプロジェクトサイトとして公開されるため、robots.txtの公開先は https://abcderp2.github.io/Exif/robots.txt です。robots.txtの標準上、ドメイン全体へ適用される正式な配置先は https://abcderp2.github.io/robots.txt です。将来、ユーザーサイト用リポジトリまたは独自ドメインを用意する場合は、同じ内容をドメイン直下へ配置してください。
+
+クローラー設定は公開中の静的ページに対する方針です。画像処理時に利用者が選んだ画像をクローラーや外部サービスへ送信する機能はありません。
+
 ## セキュリティ設計
 
 外部通信を行うコードを置かず、Content Security Policyのconnect-srcをnoneにしています。スクリプト、スタイル、Workerは同一サイトの静的ファイルだけを許可し、オブジェクト、フレーム、フォーム送信、メディア読込を禁止しています。
@@ -86,7 +94,9 @@ Gitの変更はPull Request単位でまとめ、mainへはsquash mergeします�
 
 ## ファイル構成
 
-index.htmlは画面、説明、免責事項、Content Security Policyを持ちます。
+index.htmlは画面、説明、免責事項、検索公開設定、Content Security Policyを持ちます。
+
+robots.txtは一般検索と主要AIクローラーへの公開方針を記載します。
 
 styles.cssはスマートフォン、タブレット、パソコン、狭い画面、横向き、ダークモード、キーボード操作、動きを減らす設定、高コントラスト表示を担当します。
 
@@ -104,7 +114,9 @@ tests/reports.test.cjsは一括JSON、CSV、表計算ソフト向けの数式注
 
 tests/browser-audit.mjsはChromiumを実際に起動し、三形式の入力と出力、処理後検査、一括レポート、ドラッグ追加、再処理、リセット、低性能端末向け縮小、画面幅、外部通信、JavaScript例外を確認します。
 
-.github/workflows/browser-audit.ymlはPull Request、mainへの反映、手動実行時に構文検査、単体テスト、ブラウザ監査を実行します。Playwrightは監査時だけ固定版を一時インストールし、公開サイトの実行時依存関係にはしません。
+tests/release-audit.mjsは有効なJPEGへExifとGPS領域を付けた入力を使い、画面での検出、再エンコード、保存後の再解析、JSONとCSV、順次保存、ドラッグ操作、robots.txt、不要なページ内リンクがないことを確認します。
+
+.github/workflows/browser-audit.ymlはPull Request、mainへの反映、手動実行時に構文検査、単体テスト、ブラウザ監査を実行します。main反映時はGitHub Pagesへ今回の版が配信されるまで待ち、公開URLでもrelease-auditを実行します。Playwrightは監査時だけ固定版を一時インストールし、公開サイトの実行時依存関係にはしません。
 
 exif_remover.pyはPillowを使う別用途のローカルCLIです。Web版の実行には使いません。
 
@@ -132,6 +144,7 @@ python3 -m http.server 8000
 npm install --no-save --no-package-lock @playwright/test@1.55.0
 npx playwright install chromium
 node tests/browser-audit.mjs
+AUDIT_RELEASE_TARGET=http://127.0.0.1:8000/ node tests/release-audit.mjs
 ```
 
 通常はPull Requestを作成するとGitHub Actionsが同じ監査を自動実行します。変更時の確認事項はCONTRIBUTING.mdにまとめています。
