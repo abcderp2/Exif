@@ -90,11 +90,13 @@
 
   function protectSpreadsheetFormula(value) {
     const text = value == null ? "" : String(value).replace(/\u0000/g, "");
-    return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+    return /^\s*[=+\-@]/.test(text) || /^[\t\r]/.test(text) ? `'${text}` : text;
   }
 
   function numberOrEmpty(value) {
-    return Number.isFinite(Number(value)) ? Number(value) : "";
+    if (value == null || value === "") return "";
+    const number = Number(value);
+    return Number.isFinite(number) ? number : "";
   }
 
   function cloneSafeValue(value) {
@@ -102,8 +104,9 @@
     if (typeof value === "number") return Number.isFinite(value) ? value : null;
     if (Array.isArray(value)) return value.map(cloneSafeValue);
     if (typeof value === "object") {
-      const copy = {};
+      const copy = Object.create(null);
       Object.keys(value).forEach((key) => {
+        if (key === "__proto__" || key === "constructor" || key === "prototype") return;
         copy[key] = cloneSafeValue(value[key]);
       });
       return copy;
