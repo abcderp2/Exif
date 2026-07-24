@@ -47,8 +47,22 @@ test("CSV includes a BOM and safe summary columns", () => {
 });
 
 test("CSV prevents spreadsheet formula execution from file names", () => {
-  const csv = Reports.toCsv([sampleReport("=HYPERLINK(\"https://example.invalid\")")]);
+  const csv = Reports.toCsv([
+    sampleReport("=HYPERLINK(\"https://example.invalid\")"),
+    sampleReport("  +SUM(1,1).jpg")
+  ]);
   assert.match(csv, /'=HYPERLINK/);
+  assert.match(csv, /'  \+SUM/);
+});
+
+test("CSV keeps unknown numeric values empty", () => {
+  const report = sampleReport();
+  report.analysis.width = null;
+  report.analysis.height = undefined;
+  report.output = null;
+  const csv = Reports.toCsv([report]);
+  assert.doesNotMatch(csv, /,0,0,/);
+  assert.match(csv, /JPEG,image\/jpeg,1234,,,検出/);
 });
 
 test("batch report clones source objects", () => {
