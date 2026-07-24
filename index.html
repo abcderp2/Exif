@@ -6,17 +6,25 @@
   <meta name="theme-color" content="#0c172b">
   <meta name="color-scheme" content="light dark">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; worker-src 'self'; connect-src 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self'; media-src 'none'; manifest-src 'none'; worker-src 'self'; connect-src 'none';">
   <title>画像メタデータクリーナー</title>
-  <meta name="description" content="JPEG、PNG、WebPを端末内だけで相互変換し、Exif、GPS、撮影日時などの付加情報を引き継がない画像を作る無保証の無料ツールです。">
+  <meta name="description" content="JPEG、PNG、WebPを端末内だけで一括処理し、Exifなどの付加情報を引き継がない画像と安全なJSON、CSV分析結果を作る無料ツールです。">
   <link rel="stylesheet" href="styles.css">
   <script src="metadata.js" defer></script>
+  <script src="reports.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
   <noscript>
     <div class="noscript-message">画像処理を端末内で行うため、JavaScriptを有効にしてください。</div>
   </noscript>
+
+  <div class="drop-overlay" id="dropOverlay" hidden aria-hidden="true">
+    <div class="drop-overlay-card">
+      <strong>ここで画像を追加</strong>
+      <span>JPEG、PNG、WebPをまとめて追加できます</span>
+    </div>
+  </div>
 
   <header class="site-header">
     <a class="brand" href="./" aria-label="画像メタデータクリーナーの先頭へ">
@@ -30,7 +38,7 @@
     <section class="hero" aria-labelledby="pageTitle">
       <p class="eyebrow">画像は端末から送信されません</p>
       <h1 id="pageTitle">付加情報を残さず、<br>使いたい形式へ。</h1>
-      <p class="hero-copy">JPEG、PNG、WebPをブラウザ内で読み直し、画素から新しい画像を作ります。Exif、GPS、撮影日時、機種名、作者情報、コメントなどを出力へコピーしません。</p>
+      <p class="hero-copy">JPEG、PNG、WebPをブラウザ内で一件ずつ読み直し、画素から新しい画像を作ります。Exif、GPS、撮影日時、機種名、作者情報、コメントなどを出力へコピーしません。</p>
       <div class="trust-row" aria-label="このサイトの設計方針">
         <span>サーバー送信なし</span>
         <span>外部ライブラリなし</span>
@@ -42,18 +50,18 @@
       <div class="section-heading">
         <div>
           <p class="section-kicker">画像を追加</p>
-          <h2 id="uploadTitle">JPEG、PNG、WebPを選ぶ</h2>
+          <h2 id="uploadTitle">JPEG、PNG、WebPをまとめて選ぶ</h2>
         </div>
         <span class="step-number" aria-hidden="true">01</span>
       </div>
 
       <button class="drop-zone" id="dropZone" type="button" aria-describedby="uploadHelp uploadLimits">
         <span class="drop-zone-title">ここに画像を置く</span>
-        <span class="drop-zone-subtitle">または、この領域を押して端末から選択</span>
+        <span class="drop-zone-subtitle">画面内へドロップするか、この領域を押して端末から選択</span>
         <span class="drop-zone-button">ファイルを選ぶ</span>
       </button>
       <input id="fileInput" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
-      <p id="uploadHelp" class="help-text">拡張子だけでなく、ファイル本体の形式を確認します。元のファイルは変更されません。</p>
+      <p id="uploadHelp" class="help-text">拡張子だけでなく、ファイル本体の形式を確認します。元のファイルは変更されません。フォルダーは受け付けません。</p>
       <p id="uploadLimits" class="limit-text">一度に最大20個、合計96MBまで。1個あたり32MBまで。</p>
     </section>
 
@@ -118,10 +126,13 @@
       </div>
 
       <div class="action-row">
-        <button class="button button-primary" id="startButton" type="button" disabled>処理を開始</button>
-        <button class="button button-secondary" id="downloadAllButton" type="button" disabled>完了分を順番に保存</button>
+        <button class="button button-primary" id="startButton" type="button" disabled>付加情報を削除して一括処理</button>
+        <button class="button button-secondary" id="downloadAllButton" type="button" disabled>完了画像を順番に保存</button>
+        <button class="button button-secondary" id="exportJsonButton" type="button" disabled>分析結果をJSON保存</button>
+        <button class="button button-secondary" id="exportCsvButton" type="button" disabled>分析結果をCSV保存</button>
         <button class="button button-quiet" id="resetButton" type="button">やり直す</button>
       </div>
+      <p class="export-note">JSONとCSVには、検出した領域の分類だけを記録します。GPS座標やコメント本文などの生の値は含めません。</p>
     </section>
 
     <section class="panel results-panel" id="resultsPanel" aria-labelledby="resultsTitle" hidden>
@@ -154,6 +165,10 @@
           <p>画像を画素へ展開してから新しく保存します。入力にあったExif、GPS、XMP、IPTC、コメント、埋め込みサムネイルは引き継ぎません。</p>
         </article>
         <article>
+          <h3>複数画像も一件ずつ処理する</h3>
+          <p>画像をまとめて追加しても、変換は一件ずつ進めます。低性能端末では、入力合計、展開画素、完了画像の保持量を自動で抑えます。</p>
+        </article>
+        <article>
           <h3>形式と画質は変わる</h3>
           <p>JPEGとWebPは再圧縮されます。PNGも色設定やビット深度が変わる場合があります。JPEGへ変換すると透明部分は白になります。</p>
         </article>
@@ -161,9 +176,19 @@
           <h3>分析には範囲がある</h3>
           <p>一般的なJPEG、PNG、WebPの構造を確認します。鑑定やファイル仕様の完全な証明ではありません。重要な用途では保存後のファイルも別の手段で確認してください。</p>
         </article>
+      </div>
+    </section>
+
+    <section class="plain-note" aria-labelledby="deviceTitle">
+      <h2 id="deviceTitle">端末とブラウザについて</h2>
+      <div class="notice-grid">
         <article>
-          <h3>低性能端末を止めにくくする</h3>
-          <p>画像を一件ずつ処理し、展開後の画素数に上限を置きます。処理が難しい場合は、他のタブやアプリを閉じ、安全設定で一枚ずつ試してください。</p>
+          <h3>スマートフォンとタブレット</h3>
+          <p>狭い画面、タッチ操作、画面の切り欠き、横向き表示に合わせて配置を変えます。複数ファイルの保存時は、ブラウザやOSの確認が表示される場合があります。</p>
+        </article>
+        <article>
+          <h3>古い端末には限界がある</h3>
+          <p>現行の主要ブラウザを対象にしています。WebP保存、Worker、複数ダウンロードなどは端末やブラウザによって利用できない場合があります。</p>
         </article>
       </div>
     </section>
