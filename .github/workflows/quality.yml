@@ -27,6 +27,8 @@ jobs:
           node --check metadata.js
           node --check reports.js
           node --check image-worker.js
+          node --check tests/browser-audit.mjs
+          node --check tests/release-audit.mjs
       - name: Run npm verification
         run: npm run verify
       - name: Check Python syntax
@@ -40,6 +42,8 @@ jobs:
           test -f metadata.js
           test -f reports.js
           test -f image-worker.js
+          test -f robots.txt
+          test -f tests/release-audit.mjs
           test -f README.md
           test -f CONTRIBUTING.md
           test -f SECURITY.md
@@ -49,3 +53,11 @@ jobs:
           grep -Fq 'reports.js' index.html
           grep -Fq 'app.js' index.html
           grep -Fq 'image-worker.js' app.js
+          grep -Fq 'id="disclaimerTitle"' index.html
+          ! grep -Fq 'href="#disclaimerTitle"' index.html
+          grep -Fq 'User-agent: OAI-SearchBot' robots.txt
+          grep -Fq 'User-agent: GPTBot' robots.txt
+          grep -Fq 'User-agent: Claude-User' robots.txt
+          grep -Fq 'User-agent: Claude-SearchBot' robots.txt
+          grep -Fq 'User-agent: ClaudeBot' robots.txt
+          grep -Fq 'User-agent: Google-Extended' robots.txt
