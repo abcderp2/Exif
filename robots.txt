@@ -1,0 +1,24 @@
+# Public pages are open to search engines and AI crawlers.
+User-agent: *
+Allow: /
+
+# OpenAI search and model-development crawlers.
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+# Anthropic user-directed, search, and model-development crawlers.
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+# Google token for Gemini training and grounding preferences.
+User-agent: Google-Extended
+Allow: /

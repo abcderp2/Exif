@@ -10,7 +10,7 @@
 
 対応形式を増やす場合は、形式判定、構造検査、再エンコード、処理後検証、低性能端末の上限、セキュリティ上の動作内容を一緒に実装します。accept属性だけを増やしません。
 
-免責事項、対応形式、処理上限、外部通信、保存レポートの説明を変える場合は、サイト、README、SECURITY.mdの記載を同じPull Requestで揃えます。
+免責事項、対応形式、処理上限、外部通信、保存レポート、検索公開方針の説明を変える場合は、サイト、README、SECURITY.mdの記載を同じPull Requestで揃えます。
 
 ## ファイルの責務
 
@@ -21,6 +21,8 @@ reports.jsは安全な分析オブジェクトからJSONとCSVを作ります。
 app.jsは画面状態と画像処理の流れを担当します。新しい処理は、リセット、個別削除、ページ終了時の解放経路も一緒に追加します。
 
 styles.cssは既存の配色と余白の印象を大きく変えず、280px以上の狭い画面から大画面まで横にはみ出さないことを優先します。
+
+robots.txtは公開クローラー方針だけを担当します。利用者の画像処理や外部通信を追加する場所として使いません。GitHub Pagesのプロジェクトサイトでは、ドメイン直下のrobots.txtとは配置が異なることをREADMEへ明記します。
 
 ## 必須確認
 
@@ -40,7 +42,7 @@ python3 -m http.server 8000
 
 JPEG、透明PNG、WebPを用意し、入力と同じ形式、JPEG、PNG、WebPへの変換を確認します。ブラウザがWebP保存に対応しない場合は、選択肢が無効になることを確認します。
 
-ExifまたはPNGテキストを含むテスト画像で、処理前に分類が表示され、処理後に安全確認を通過することを確認します。
+有効なJPEGへExifまたはGPS領域を付けたテスト画像で、処理前に付加情報が検出され、処理後にExifとGPS領域がなくなり、保存後の再解析にも通過することを確認します。
 
 複数画像の追加、一括処理、画面全体へのドラッグ、フォルダー拒否、重複拒否、やり直す、個別削除、個別再処理、個別保存、完了分保存、個別JSON、一括JSON、一括CSVを確認します。
 
@@ -48,13 +50,17 @@ CSVは、先頭がイコール、プラス、マイナス、アットマーク�
 
 ブラウザの開発者ツールで、画像処理による外部通信が発生していないことを確認します。
 
-サイト上に無保証、自己の責任、原本保管、重要用途での別手段による確認が明記されていることを確認します。
+サイト上に無保証、自己の責任、原本保管、重要用途での別手段による確認が明記されていることを確認します。免責事項の本文は残し、不要なページ内リンクを増やしません。
+
+robots.txtに一般クローラー、OAI-SearchBot、GPTBot、Claude-User、Claude-SearchBot、ClaudeBot、Google-Extendedの許可設定があることを確認します。
 
 ## 自動ブラウザ監査
 
 Pull Requestを作成すると.github/workflows/browser-audit.ymlが自動実行されます。
 
-監査は公開サイトと変更中のローカルサイトをChromiumで実際に操作します。公開サイトにはまだ反映されていない新機能があるため、新機能固有の確認は変更中のローカルサイトだけで実行します。
+tests/browser-audit.mjsはローカル版と公開版で基本機能を操作します。tests/release-audit.mjsはExifとGPS付きJPEGの除去、一括レポート、ドラッグ操作、順次保存、robots.txt、不要な免責リンクがないことを確認します。
+
+mainへの反映時は、GitHub Pagesに今回のrobots.txtが配信されるまで待ってから、公開URLに対してrelease-auditを実行します。
 
 手元で再実行する場合は、ローカルサーバーを起動したうえで次を実行します。
 
@@ -62,6 +68,7 @@ Pull Requestを作成すると.github/workflows/browser-audit.ymlが自動実行
 npm install --no-save --no-package-lock @playwright/test@1.55.0
 npx playwright install chromium
 node tests/browser-audit.mjs
+AUDIT_RELEASE_TARGET=http://127.0.0.1:8000/ node tests/release-audit.mjs
 ```
 
 Playwrightは監査時だけ使います。公開サイトの実行時依存関係へ追加しません。
