@@ -7,13 +7,17 @@ const targets = [
     name: "変更ブランチ",
     url: process.env.AUDIT_LOCAL_URL || "http://127.0.0.1:8000/",
     requireDisclaimer: true,
-    requireMinimalCsp: true
+    requireMinimalCsp: true,
+    requireBatchExports: true,
+    requireGlobalDrop: true
   },
   {
     name: "公開サイト",
     url: process.env.AUDIT_LIVE_URL || "https://abcderp2.github.io/Exif/",
     requireDisclaimer: true,
-    requireMinimalCsp: false
+    requireMinimalCsp: false,
+    requireBatchExports: false,
+    requireGlobalDrop: false
   }
 ];
 
@@ -28,7 +32,8 @@ try {
 async function auditTarget(target) {
   const context = await browser.newContext({
     viewport: { width: 360, height: 780 },
-    deviceScaleFactor: 1
+    deviceScaleFactor: 1,
+    acceptDownloads: true
   });
 
   await context.addInitScript(() => {
@@ -67,6 +72,7 @@ async function auditTarget(target) {
     assert(!csp?.includes("img-src 'self' blob: data:"), `${target.name}のCSPが不要なdata URL画像を許可しています`);
     assert(csp?.includes("worker-src 'self'"), `${target.name}のCSPでWorkerの許可範囲を確認できません`);
     assert(!csp?.includes("worker-src 'self' blob:"), `${target.name}のCSPが不要なblob Workerを許可しています`);
+    assert(csp?.includes("media-src 'none'"), `${target.name}のCSPで不要なメディア読込が禁止されていません`);
   }
 
   if (target.requireDisclaimer) {
@@ -75,15 +81,20 @@ async function auditTarget(target) {
     assert(bodyText.includes("自己の責任"), "利用者自身の判断と責任の記載がありません");
   }
 
+  if (target.requireBatchExports) await assertNoHorizontalOverflow(page, 280, 720, `${target.name} 最小幅`);
+  await assertNoHorizontalOverflow(page, 320, 720, `${target.name} 小型スマートフォン`);
   await assertNoHorizontalOverflow(page, 360, 780, `${target.name} スマートフォン`);
   await assertNoHorizontalOverflow(page, 768, 1024, `${target.name} タブレット`);
+  await assertNoHorizontalOverflow(page, 1024, 768, `${target.name} タブレット横向き`);
   await assertNoHorizontalOverflow(page, 1440, 900, `${target.name} パソコン`);
   await page.setViewportSize({ width: 360, height: 780 });
 
   await testInvalidFile(page);
+  if (target.requireGlobalDrop) await testGlobalDrop(page);
   await testInputDetection(page);
+  if (target.requireBatchExports) await testBatchExports(page);
   await testConversions(page);
-  await testLowEndScaling(page);
+  await testLowEndScaling(page, target.requireBatchExports ? 4_000_000 : 8_000_000);
 
   assert.deepEqual(outsideRequests, [], `${target.name}が外部へ通信しました: ${outsideRequests.join(", ")}`);
   assert.deepEqual(failedRequests, [], `${target.name}で通信失敗が発生しました: ${failedRequests.join(", ")}`);
@@ -110,6 +121,28 @@ async function testInvalidFile(page) {
   assert.equal(await page.locator(".result-item").count(), 0);
 }
 
+async function testGlobalDrop(page) {
+  await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 40;
+    canvas.height = 30;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#143b73";
+    context.fillRect(0, 0, 40, 30);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const file = new File([blob], "dropped.png", { type: "image/png", lastModified: 1700000000000 });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    document.body.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    if (document.querySelector("#dropOverlay")?.hidden) throw new Error("ドラッグ表示が開きませんでした");
+    document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await waitForReadyItems(page, 1);
+  assert.equal(await page.locator("#dropOverlay").isHidden(), true);
+  await page.locator("#resetButton").click();
+  await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
+}
+
 async function testInputDetection(page) {
   const inputs = [
     ["image/jpeg", "source.jpg"],
@@ -132,6 +165,43 @@ async function testInputDetection(page) {
   await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
 }
 
+async function testBatchExports(page) {
+  await setCanvasFiles(page, [
+    { mime: "image/png", name: "batch-one.png", width: 48, height: 36, alpha: true },
+    { mime: "image/jpeg", name: "=batch-two.jpg", width: 48, height: 36, alpha: false }
+  ]);
+  await waitForReadyItems(page, 2);
+
+  const [jsonDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#exportJsonButton").click()
+  ]);
+  const jsonPath = await jsonDownload.path();
+  assert(jsonPath, "一括JSONを取得できませんでした");
+  const batch = JSON.parse(await fs.readFile(jsonPath, "utf8"));
+  assert.equal(batch.itemCount, 2);
+  assert.equal(batch.items.length, 2);
+  assert.equal(JSON.stringify(batch).includes("latitude"), false);
+  assert.equal(JSON.stringify(batch).includes("longitude"), false);
+
+  const [csvDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#exportCsvButton").click()
+  ]);
+  const csvPath = await csvDownload.path();
+  assert(csvPath, "一括CSVを取得できませんでした");
+  const csv = await fs.readFile(csvPath, "utf8");
+  assert(csv.startsWith("\uFEFF"), "CSVにUTF-8 BOMがありません");
+  assert(csv.includes("処理後検査"), "CSVの見出しが不足しています");
+  assert(csv.includes("'=batch-two.jpg"), "CSV数式注入対策が働いていません");
+  assert(!/latitude|longitude/i.test(csv), "CSVに生の位置情報名が含まれています");
+
+  await page.locator("#startButton").click();
+  await page.waitForFunction(() => document.querySelectorAll('.result-item[data-status="success"]').length === 2, null, { timeout: 60000 });
+  await page.locator("#resetButton").click();
+  await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
+}
+
 async function testConversions(page) {
   const outputs = [
     { key: "jpeg", mime: "image/jpeg", extension: ".jpg", magic: [0xff, 0xd8, 0xff] },
@@ -140,6 +210,8 @@ async function testConversions(page) {
   ];
 
   for (const output of outputs) {
+    const option = page.locator(`#outputFormatSelect option[value="${output.key}"]`);
+    if (await option.isDisabled()) continue;
     await page.locator("#outputFormatSelect").selectOption(output.key);
     await setCanvasFile(page, { mime: "image/png", name: `convert-to-${output.key}.png`, width: 64, height: 48, alpha: true });
     await waitForReadyItems(page, 1);
@@ -162,7 +234,7 @@ async function testConversions(page) {
 
     const [reportDownload] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "分析結果を保存" }).click()
+      page.getByRole("button", { name: /JSON分析結果|分析結果を保存/ }).first().click()
     ]);
     const reportPath = await reportDownload.path();
     assert(reportPath, "分析結果を取得できませんでした");
@@ -181,7 +253,7 @@ async function testConversions(page) {
   }
 }
 
-async function testLowEndScaling(page) {
+async function testLowEndScaling(page, expectedPixelLimit) {
   await page.locator("#outputFormatSelect").selectOption("png");
   await page.locator("#largeImageSelect").selectOption("safe");
   await setCanvasFile(page, { mime: "image/png", name: "large.png", width: 3000, height: 3000, alpha: false });
@@ -194,7 +266,7 @@ async function testLowEndScaling(page) {
   const caption = await page.locator("#previewCaption").innerText();
   const match = caption.match(/(\d+) × (\d+)/);
   assert(match, "処理後の大きさを確認できませんでした");
-  assert(Number(match[1]) * Number(match[2]) <= 8_000_000, "低性能端末向けの画素上限を超えています");
+  assert(Number(match[1]) * Number(match[2]) <= expectedPixelLimit, "低性能端末向けの画素上限を超えています");
 
   await page.locator("#resetButton").click();
 }
@@ -211,24 +283,29 @@ async function waitForReadyItems(page, count) {
 }
 
 async function setCanvasFile(page, options) {
-  await page.evaluate(async ({ mime, name, width, height, alpha }) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    context.fillStyle = "#143b73";
-    context.fillRect(0, 0, width, height);
-    context.fillStyle = alpha ? "rgba(255, 190, 70, 0.45)" : "rgb(255, 190, 70)";
-    context.fillRect(Math.floor(width / 4), Math.floor(height / 4), Math.floor(width / 2), Math.floor(height / 2));
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.92));
-    if (!blob || blob.type !== mime) throw new Error(`${mime}のテスト画像を作成できません`);
-    const file = new File([blob], name, { type: mime, lastModified: 1700000000000 });
+  await setCanvasFiles(page, [options]);
+}
+
+async function setCanvasFiles(page, optionsList) {
+  await page.evaluate(async (allOptions) => {
     const transfer = new DataTransfer();
-    transfer.items.add(file);
+    for (const { mime, name, width, height, alpha } of allOptions) {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#143b73";
+      context.fillRect(0, 0, width, height);
+      context.fillStyle = alpha ? "rgba(255, 190, 70, 0.45)" : "rgb(255, 190, 70)";
+      context.fillRect(Math.floor(width / 4), Math.floor(height / 4), Math.floor(width / 2), Math.floor(height / 2));
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.92));
+      if (!blob || blob.type !== mime) throw new Error(`${mime}のテスト画像を作成できません`);
+      transfer.items.add(new File([blob], name, { type: mime, lastModified: 1700000000000 }));
+    }
     const input = document.querySelector("#fileInput");
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
-  }, options);
+  }, optionsList);
 }
 
 async function setRawFile(page, { name, type, bytes }) {
