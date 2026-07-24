@@ -25,6 +25,7 @@ jobs:
         run: |
           node --check app.js
           node --check metadata.js
+          node --check reports.js
           node --check image-worker.js
       - name: Run npm verification
         run: npm run verify
@@ -37,7 +38,14 @@ jobs:
           test -f styles.css
           test -f app.js
           test -f metadata.js
+          test -f reports.js
           test -f image-worker.js
+          test -f README.md
+          test -f CONTRIBUTING.md
+          test -f SECURITY.md
+          test -f LICENSE
           grep -Fq 'styles.css' index.html
+          grep -Fq 'metadata.js' index.html
+          grep -Fq 'reports.js' index.html
           grep -Fq 'app.js' index.html
           grep -Fq 'image-worker.js' app.js
