@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -58,10 +60,43 @@ jobs:
           cat /tmp/browser-audit.log
           exit $status
 
-      - name: Upload audit log
+      - name: Audit release behavior locally
+        env:
+          AUDIT_RELEASE_TARGET: http://127.0.0.1:8000/
+        run: |
+          set +e
+          node tests/release-audit.mjs > /tmp/release-local-audit.log 2>&1
+          status=$?
+          cat /tmp/release-local-audit.log
+          exit $status
+
+      - name: Wait for Pages and audit the published release
+        if: github.event_name != 'pull_request'
+        env:
+          AUDIT_RELEASE_TARGET: https://abcderp2.github.io/Exif/
+        run: |
+          ready=0
+          for attempt in {1..30}; do
+            if curl --fail --silent https://abcderp2.github.io/Exif/robots.txt | grep -Fq 'User-agent: Claude-SearchBot'; then
+              ready=1
+              break
+            fi
+            sleep 10
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "GitHub Pagesに今回の変更が反映されたことを確認できませんでした"
+            exit 1
+          fi
+          set +e
+          node tests/release-audit.mjs > /tmp/release-live-audit.log 2>&1
+          status=$?
+          cat /tmp/release-live-audit.log
+          exit $status
+
+      - name: Upload audit logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: browser-audit-log
-          path: /tmp/browser-audit.log
+          name: browser-audit-logs
+          path: /tmp/*audit.log
           retention-days: 3
