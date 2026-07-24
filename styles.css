@@ -25,15 +25,18 @@
 }
 
 html {
-  min-width: 320px;
+  min-width: 280px;
   background: var(--soft);
   scroll-behavior: smooth;
+  text-size-adjust: 100%;
 }
 
 body {
-  min-width: 320px;
+  min-width: 280px;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 88% 0%, rgba(32, 95, 219, 0.09), transparent 30rem),
     var(--soft);
@@ -41,6 +44,8 @@ body {
 
 button,
 select {
+  max-width: 100%;
+  min-width: 0;
   font: inherit;
 }
 
@@ -66,6 +71,10 @@ summary:focus-visible {
 
 a {
   color: inherit;
+}
+
+img {
+  max-width: 100%;
 }
 
 [hidden] {
@@ -105,6 +114,7 @@ a {
 .site-header {
   display: flex;
   min-height: 72px;
+  padding-top: env(safe-area-inset-top);
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -112,6 +122,7 @@ a {
 
 .brand {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 10px;
   color: var(--ink);
@@ -119,6 +130,11 @@ a {
   font-weight: 760;
   letter-spacing: 0.01em;
   text-decoration: none;
+}
+
+.brand span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .brand-mark {
@@ -139,6 +155,7 @@ a {
   color: var(--muted);
   font-size: 0.8rem;
   text-underline-offset: 3px;
+  overflow-wrap: anywhere;
 }
 
 .text-link:hover {
@@ -166,10 +183,11 @@ a {
   max-width: 800px;
   margin: 0;
   color: var(--night);
-  font-size: clamp(2.35rem, 8vw, 5.7rem);
+  font-size: clamp(2.2rem, 8vw, 5.7rem);
   font-weight: 820;
   letter-spacing: -0.065em;
   line-height: 1.06;
+  overflow-wrap: anywhere;
 }
 
 .hero-copy {
@@ -205,6 +223,7 @@ a {
 }
 
 .panel {
+  min-width: 0;
   margin-top: 18px;
   padding: clamp(20px, 4vw, 38px);
   border: 1px solid var(--line);
@@ -215,10 +234,15 @@ a {
 
 .section-heading {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 24px;
+}
+
+.section-heading > div {
+  min-width: 0;
 }
 
 .compact-heading {
@@ -232,6 +256,7 @@ a {
   font-size: clamp(1.3rem, 4vw, 1.75rem);
   letter-spacing: -0.035em;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .step-number {
@@ -299,17 +324,64 @@ a {
   font-weight: 740;
 }
 
+.drop-overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  padding:
+    max(20px, env(safe-area-inset-top))
+    max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
+  place-items: center;
+  pointer-events: none;
+  background: rgba(12, 23, 43, 0.64);
+  backdrop-filter: blur(4px);
+}
+
+.drop-overlay-card {
+  display: grid;
+  width: min(100%, 520px);
+  min-height: 180px;
+  padding: 28px;
+  place-content: center;
+  gap: 6px;
+  border: 2px dashed #c7d8ff;
+  border-radius: 22px;
+  background: #f7f9ff;
+  color: #172238;
+  text-align: center;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.22);
+}
+
+.drop-overlay-card strong {
+  font-size: clamp(1.35rem, 5vw, 2rem);
+}
+
+.drop-overlay-card span {
+  color: #66738a;
+  font-size: 0.86rem;
+}
+
 .help-text,
 .limit-text,
-.settings-note {
+.settings-note,
+.export-note {
   margin: 16px 0 0;
   color: var(--muted);
   font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 
 .limit-text {
   margin-top: 6px;
   color: #78859a;
+  font-size: 0.76rem;
+}
+
+.export-note {
+  margin-top: 12px;
   font-size: 0.76rem;
 }
 
@@ -320,6 +392,7 @@ a {
 
 .field-label {
   display: grid;
+  min-width: 0;
   gap: 8px;
   color: var(--ink);
   font-size: 0.83rem;
@@ -351,6 +424,10 @@ a {
   background: var(--soft);
 }
 
+.queue-summary > div {
+  min-width: 0;
+}
+
 .queue-count,
 .queue-status {
   margin: 0;
@@ -366,15 +443,18 @@ a {
   margin-top: 4px;
   color: var(--muted);
   font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 
 .progress-wrap {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 12px;
 }
 
 .progress-track {
+  min-width: 0;
   flex: 1;
   height: 8px;
   overflow: hidden;
@@ -407,6 +487,10 @@ a {
   margin-top: 18px;
 }
 
+.action-row > * {
+  flex: 1 1 12rem;
+}
+
 .button,
 .result-action {
   display: inline-flex;
@@ -417,8 +501,11 @@ a {
   border-radius: 10px;
   font-size: 0.82rem;
   font-weight: 760;
+  line-height: 1.35;
+  text-align: center;
   text-decoration: none;
   cursor: pointer;
+  overflow-wrap: anywhere;
   transition: opacity 160ms ease, background 160ms ease, color 160ms ease;
 }
 
@@ -453,10 +540,12 @@ a {
 
 .results-list {
   display: grid;
+  min-width: 0;
   gap: 12px;
 }
 
 .result-item {
+  min-width: 0;
   padding: 17px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -480,6 +569,7 @@ a {
 
 .result-topline {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
@@ -547,6 +637,7 @@ a {
 }
 
 .analysis-details {
+  min-width: 0;
   margin-top: 13px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -560,6 +651,7 @@ a {
   font-size: 0.8rem;
   font-weight: 740;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 
 .analysis-details[open] summary {
@@ -571,6 +663,7 @@ a {
   margin: 13px 13px 0;
   color: var(--muted);
   font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .analysis-note {
@@ -583,7 +676,8 @@ a {
 
 .analysis-grid {
   display: grid;
-  grid-template-columns: minmax(6rem, auto) 1fr;
+  min-width: 0;
+  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
   gap: 5px 14px;
   margin: 13px;
   font-size: 0.76rem;
@@ -594,6 +688,7 @@ a {
 }
 
 .analysis-grid dd {
+  min-width: 0;
   margin: 0;
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -609,11 +704,13 @@ a {
 .metadata-chip {
   display: inline-flex;
   min-height: 30px;
+  max-width: 100%;
   padding: 5px 9px;
   align-items: center;
   border-radius: 999px;
   font-size: 0.7rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .metadata-chip.sensitive {
@@ -630,6 +727,7 @@ a {
   display: grid;
   min-height: 180px;
   max-height: 70vh;
+  max-height: 70dvh;
   overflow: auto;
   place-items: center;
   border-radius: 15px;
@@ -641,12 +739,14 @@ a {
     #f7f9fc;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-size: 16px 16px;
+  overscroll-behavior: contain;
 }
 
 .preview-frame img {
   display: block;
   max-width: 100%;
   max-height: 68vh;
+  max-height: 68dvh;
   object-fit: contain;
 }
 
@@ -654,6 +754,7 @@ a {
   margin: 12px 0 0;
   color: var(--muted);
   font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .plain-note {
@@ -667,6 +768,7 @@ a {
 }
 
 .notice-grid article {
+  min-width: 0;
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
@@ -681,6 +783,7 @@ a {
   margin: 8px 0 0;
   color: var(--muted);
   font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 
 .site-footer {
@@ -695,6 +798,7 @@ a {
 
 .site-footer p {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 @media (min-width: 720px) {
@@ -719,7 +823,9 @@ a {
 
   .site-footer {
     flex-direction: row;
+    flex-wrap: wrap;
     justify-content: space-between;
+    column-gap: 24px;
   }
 }
 
@@ -751,6 +857,97 @@ a {
   .button,
   .result-action {
     width: 100%;
+    flex-basis: 100%;
+  }
+
+  .result-topline {
+    gap: 8px;
+  }
+}
+
+@media (max-width: 380px) {
+  .site-header {
+    padding-block: 12px;
+    align-items: flex-start;
+  }
+
+  .brand span:last-child {
+    max-width: 8.5rem;
+  }
+
+  .hero {
+    padding-top: 20px;
+  }
+
+  .hero h1 {
+    font-size: clamp(2rem, 13vw, 3rem);
+  }
+
+  .panel {
+    padding: 18px;
+  }
+
+  .drop-zone {
+    min-height: 188px;
+    padding-inline: 14px;
+  }
+
+  .analysis-grid {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .analysis-grid dd {
+    margin-bottom: 7px;
+  }
+}
+
+@media (max-width: 320px) {
+  .site-header,
+  .site-footer,
+  .page-shell {
+    width: min(100% - 16px, 1120px);
+  }
+
+  .site-header {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .site-header .text-link {
+    max-width: none;
+    text-align: left;
+  }
+
+  .section-heading {
+    gap: 8px;
+  }
+
+  .step-number {
+    display: none;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .hero {
+    padding: 16px 0 24px;
+  }
+
+  .drop-zone {
+    min-height: 150px;
+  }
+
+  .drop-overlay-card {
+    min-height: 130px;
+  }
+}
+
+@media (pointer: coarse) {
+  .button,
+  .result-action,
+  .field-label select,
+  .analysis-details summary {
+    min-height: 48px;
   }
 }
 
@@ -860,7 +1057,12 @@ a {
   .drop-zone,
   .panel,
   .result-item,
-  .analysis-details {
+  .analysis-details,
+  .drop-overlay-card {
     border: 1px solid CanvasText;
+  }
+
+  .drop-overlay {
+    background: Canvas;
   }
 }
