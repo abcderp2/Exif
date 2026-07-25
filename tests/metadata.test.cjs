@@ -113,6 +113,7 @@ test("JPEG analysis finds dimensions and GPS metadata", async () => {
   assert.equal(report.width, 640);
   assert.equal(report.height, 480);
   assert.equal(report.sensitive, true);
+  assert.equal(report.exifDetected, true);
   assert.ok(report.entries.some((entry) => entry.key === "gps"));
 });
 

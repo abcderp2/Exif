@@ -13,6 +13,7 @@ function sampleReport(name = "photo.jpg") {
       width: 640,
       height: 480,
       sensitiveMetadataDetected: true,
+      exifDetected: true,
       metadataAreas: [{ label: "GPS位置情報", sensitive: true, count: 1 }],
       structureIssues: [],
       warnings: [],
@@ -25,6 +26,7 @@ function sampleReport(name = "photo.jpg") {
       size: 1000,
       width: 640,
       height: 480,
+      exifDetected: false,
       metadataCheckPassed: true
     }
   };
@@ -43,6 +45,8 @@ test("CSV includes a BOM and safe summary columns", () => {
   assert.equal(csv.charCodeAt(0), 0xfeff);
   assert.match(csv, /GPS位置情報/);
   assert.match(csv, /処理後検査/);
+  assert.match(csv, /Exif検知/);
+  assert.match(csv, /Exif除去確認/);
   assert.doesNotMatch(csv, /latitude|longitude/i);
 });
 
@@ -62,7 +66,7 @@ test("CSV keeps unknown numeric values empty", () => {
   report.output = null;
   const csv = Reports.toCsv([report]);
   assert.doesNotMatch(csv, /,0,0,/);
-  assert.match(csv, /JPEG,image\/jpeg,1234,,,検出/);
+  assert.match(csv, /JPEG,検出,image\/jpeg,1234,,,検出/);
 });
 
 test("batch report clones source objects", () => {
