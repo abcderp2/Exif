@@ -30,6 +30,7 @@
     outputFormatSelect: document.getElementById("outputFormatSelect"),
     qualitySelect: document.getElementById("qualitySelect"),
     largeImageSelect: document.getElementById("largeImageSelect"),
+    fileNameModeSelect: document.getElementById("fileNameModeSelect"),
     settingsNote: document.getElementById("settingsNote"),
     queuePanel: document.getElementById("queuePanel"),
     queueCount: document.getElementById("queueCount"),
@@ -58,7 +59,8 @@
     worker: null,
     workerSequence: 0,
     workerRequests: new Map(),
-    dragDepth: 0
+    dragDepth: 0,
+    anonymousSequence: 0
   };
 
   const outputSupport = detectOutputSupport();
@@ -88,6 +90,7 @@
     elements.outputFormatSelect.addEventListener("change", updateSettingsNote);
     elements.qualitySelect.addEventListener("change", updateSettingsNote);
     elements.largeImageSelect.addEventListener("change", updateSettingsNote);
+    elements.fileNameModeSelect.addEventListener("change", updateSettingsNote);
     elements.startButton.addEventListener("click", processPending);
     elements.downloadAllButton.addEventListener("click", downloadAll);
     elements.exportJsonButton.addEventListener("click", downloadBatchJson);
@@ -170,12 +173,18 @@
     const formatValue = elements.outputFormatSelect.value;
     const quality = Math.round(Number(elements.qualitySelect.value) * 100);
     const safeMode = elements.largeImageSelect.value === "safe";
+    const fileNameMode = elements.fileNameModeSelect.value;
     const formatText = formatValue === "same" ? "入力と同じ形式" : OUTPUT_SPECS[formatValue]?.label || "選択形式";
+    const fileNameText = fileNameMode === "preserve"
+      ? "元の名前を維持します。ただし保存に使えない文字は安全な文字へ置き換えます。形式変更時は拡張子が変わります。"
+      : fileNameMode === "anonymous"
+        ? "元の名前を使わず、image-001のような連番にします。匿名化を選ぶと分析レポートの名前も匿名化します。"
+        : "元の名前に-cleanを付けます。";
     const sizeText = safeMode
-      ? `大きな画像は、この端末の安全目安である約${formatPixels(deviceProfile.pixelBudget)}まで縮小します。`
-      : `元の大きさを優先しますが、約${formatPixels(MAX_CANVAS_PIXELS)}または一辺${MAX_CANVAS_DIMENSION}pxを超える画像は処理しません。`;
+      ? "大きな画像は、この端末の安全目安である約" + formatPixels(deviceProfile.pixelBudget) + "まで縮小します。"
+      : "元の大きさを優先しますが、約" + formatPixels(MAX_CANVAS_PIXELS) + "または一辺" + MAX_CANVAS_DIMENSION + "pxを超える画像は処理しません。";
     const alphaText = formatValue === "jpeg" ? "透明部分は白になります。" : "";
-    elements.settingsNote.textContent = `${formatText}で保存します。JPEGとWebPの画質は${quality}です。${alphaText}すべての出力でExifなどの付加情報を引き継ぎません。${sizeText}`;
+    elements.settingsNote.textContent = fileNameText + formatText + "で保存します。JPEGとWebPの画質は" + quality + "です。" + alphaText + "すべての出力でExifなどの付加情報を引き継ぎません。" + sizeText;
   }
 
   function isFileDrag(dataTransfer) {
@@ -286,6 +295,7 @@
 
       const item = {
         id: makeId(),
+        sequence: ++state.anonymousSequence,
         key,
         file,
         format: detected,
@@ -393,7 +403,7 @@
       if (!encoded.blob || encoded.blob.type !== spec.type) throw new Error(`${spec.label}形式で正しく保存できませんでした`);
 
       const verification = await ImageMetadata.inspectFile(encoded.blob, spec.key);
-      if (verification.sensitive || verification.structureIssues.length) {
+      if (verification.sensitive || verification.exifDetected || verification.structureIssues.length) {
         throw new Error("処理後の安全確認を通過しなかったため、保存用ファイルを破棄しました");
       }
 
@@ -406,7 +416,7 @@
       item.outputBlob = encoded.blob;
       item.outputUrl = URL.createObjectURL(encoded.blob);
       item.outputType = encoded.blob.type;
-      item.outputName = makeOutputName(item.file.name, spec.extension);
+      item.outputName = makeOutputName(item, spec.extension);
       item.width = encoded.width;
       item.height = encoded.height;
       item.scaled = encoded.scaled;
@@ -652,7 +662,7 @@
   }
 
   function buildSafeReport(item) {
-    const report = ImageMetadata.toSafeObject(item.file, item.metadata);
+    const report = ImageMetadata.toSafeObject(item.file, item.metadata, { fileName: makeReportSourceName(item) });
     report.processing = {
       status: item.status,
       statusLabel: STATUS_LABELS[item.status] || item.status,
@@ -666,7 +676,8 @@
         size: item.outputBlob.size,
         width: item.width,
         height: item.height,
-        metadataCheckPassed: !item.outputMetadata.sensitive && item.outputMetadata.structureIssues.length === 0
+        exifDetected: Boolean(item.outputMetadata.exifDetected),
+        metadataCheckPassed: !item.outputMetadata.sensitive && !item.outputMetadata.exifDetected && item.outputMetadata.structureIssues.length === 0
       };
     }
     return report;
@@ -682,7 +693,7 @@
     downloadText(
       ReportExport.stringifyJson(report),
       "application/json;charset=utf-8",
-      makeReportName(item.file.name)
+      makeReportName(item)
     );
     state.notice = `${item.file.name}の安全なJSON分析結果を保存しました`;
     render();
@@ -749,6 +760,7 @@
     state.processing = false;
     state.analyzing = false;
     state.previewId = null;
+    state.anonymousSequence = 0;
     state.items.forEach(releaseItemOutput);
     state.items = [];
     terminateWorker(createCancellationError());
@@ -810,6 +822,7 @@
     elements.outputFormatSelect.disabled = busy;
     elements.qualitySelect.disabled = busy;
     elements.largeImageSelect.disabled = busy;
+    elements.fileNameModeSelect.disabled = busy;
     elements.fileInput.disabled = busy;
     elements.dropZone.disabled = busy;
 
@@ -921,6 +934,7 @@
     const grid = document.createElement("dl");
     grid.className = "analysis-grid";
     appendDefinition(grid, "形式", report.formatLabel);
+    appendDefinition(grid, "Exif検知", report.exifDetected ? "検出" : "検出なし");
     appendDefinition(grid, "大きさ", report.width && report.height ? `${report.width} × ${report.height}` : "画像処理時に確認");
     appendDefinition(grid, "透明部分", report.alpha ? "あり" : "検出なし");
     appendDefinition(grid, "アニメーション", report.animated ? "あり" : "検出なし");
@@ -967,22 +981,40 @@
     return button;
   }
 
-  function makeOutputName(name, extension) {
-    return `${safeBaseName(name)}-clean${extension}`;
+  function makeOutputName(item, extension) {
+    const mode = elements.fileNameModeSelect.value;
+    if (mode === "preserve") return safeBaseName(item.file.name) + extension;
+    if (mode === "anonymous") return "image-" + String(item.sequence).padStart(3, "0") + extension;
+    return safeBaseName(item.file.name) + "-clean" + extension;
   }
 
-  function makeReportName(name) {
-    return `${safeBaseName(name)}-analysis.json`;
+  function makeReportSourceName(item) {
+    const mode = elements.fileNameModeSelect.value;
+    if (mode === "anonymous") return "image-" + String(item.sequence).padStart(3, "0") + sourceExtension(item.format.key);
+    return safeFileName(item.file.name);
   }
 
-  function safeBaseName(name) {
+  function makeReportName(item) {
+    return safeBaseName(makeReportSourceName(item)) + "-analysis.json";
+  }
+
+  function sourceExtension(formatKey) {
+    if (formatKey === "jpeg") return ".jpg";
+    if (formatKey === "png") return ".png";
+    return ".webp";
+  }
+
+  function safeFileName(name) {
     return String(name || "image")
-      .replace(/\.[^/.]+$/, "")
       .normalize("NFKC")
       .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "_")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 96) || "image";
+      .slice(0, 128) || "image";
+  }
+
+  function safeBaseName(name) {
+    return safeFileName(String(name || "image").replace(/\.[^/.]+$/, "")).slice(0, 96) || "image";
   }
 
   function formatBytes(bytes) {
