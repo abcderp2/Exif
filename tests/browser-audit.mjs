@@ -94,6 +94,7 @@ async function auditTarget(target) {
   await testInputDetection(page);
   if (target.requireBatchExports) await testBatchExports(page);
   await testConversions(page);
+  if (target.requireBatchExports) await testFileNameModes(page);
   await testLowEndScaling(page, target.requireBatchExports ? 4_000_000 : 8_000_000);
 
   assert.deepEqual(outsideRequests, [], `${target.name}が外部へ通信しました: ${outsideRequests.join(", ")}`);
@@ -198,6 +199,39 @@ async function testBatchExports(page) {
 
   await page.locator("#startButton").click();
   await page.waitForFunction(() => document.querySelectorAll('.result-item[data-status="success"]').length === 2, null, { timeout: 60000 });
+  await page.locator("#resetButton").click();
+  await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
+}
+
+async function testFileNameModes(page) {
+  await page.locator("#outputFormatSelect").selectOption("same");
+  await page.locator("#fileNameModeSelect").selectOption("preserve");
+  await setCanvasFile(page, { mime: "image/png", name: "original-name.png", width: 48, height: 36, alpha: true });
+  await waitForReadyItems(page, 1);
+  await page.locator("#startButton").click();
+  await page.waitForFunction(() => document.querySelector('.result-item[data-status="success"]'), null, { timeout: 60000 });
+  assert.equal(await page.locator(".result-detail strong").innerText(), "original-name.png");
+  await page.locator("#resetButton").click();
+  await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
+
+  await page.locator("#fileNameModeSelect").selectOption("anonymous");
+  await setCanvasFile(page, { mime: "image/png", name: "private-project.png", width: 48, height: 36, alpha: true });
+  await waitForReadyItems(page, 1);
+  await page.locator("#startButton").click();
+  await page.waitForFunction(() => document.querySelector('.result-item[data-status="success"]'), null, { timeout: 60000 });
+  assert.equal(await page.locator(".result-detail strong").innerText(), "image-001.png");
+
+  const [reportDownload] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#exportJsonButton").click()
+  ]);
+  const reportPath = await reportDownload.path();
+  assert(reportPath, "匿名化レポートを取得できませんでした");
+  const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
+  assert.equal(report.itemCount, 1);
+  assert.equal(report.items[0].file.name, "image-001.png");
+  assert(!JSON.stringify(report).includes("private-project.png"), "匿名化レポートに元の名前が残っています");
+
   await page.locator("#resetButton").click();
   await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
 }
