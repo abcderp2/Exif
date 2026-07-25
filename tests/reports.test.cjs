@@ -66,7 +66,7 @@ test("CSV keeps unknown numeric values empty", () => {
   report.output = null;
   const csv = Reports.toCsv([report]);
   assert.doesNotMatch(csv, /,0,0,/);
-  assert.match(csv, /JPEG,image\/jpeg,1234,,,検出/);
+  assert.match(csv, /JPEG,検出,image\/jpeg,1234,,,検出/);
 });
 
 test("batch report clones source objects", () => {
