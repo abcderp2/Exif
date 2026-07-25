@@ -9,6 +9,7 @@
   const CSV_HEADERS = [
     "ファイル名",
     "入力形式",
+    "Exif検知",
     "申告MIME",
     "入力サイズ(byte)",
     "幅",
@@ -63,6 +64,7 @@
     return [
       file.name || "",
       analysis.format || "",
+      analysis.exifDetected ? "検出" : "検出なし",
       file.declaredType || "",
       numberOrEmpty(file.size),
       numberOrEmpty(analysis.width),
@@ -76,6 +78,7 @@
       numberOrEmpty(output.size),
       numberOrEmpty(output.width),
       numberOrEmpty(output.height),
+      output.exifDetected === false && output.metadataCheckPassed === true ? "Exif除去確認" : output.exifDetected === true ? "Exif残存" : output.metadataCheckPassed === false ? "未確認" : "未実施",
       output.metadataCheckPassed === true ? "通過" : output.metadataCheckPassed === false ? "不通過" : "未実施",
       processing.warning || "",
       processing.error || ""
