@@ -79,6 +79,7 @@
       orientation: 1,
       alpha: false,
       animated: false,
+      exifDetected: false,
       entries: [],
       sensitive: false,
       structureIssues: [],
@@ -159,6 +160,7 @@
         const payload = bytes.subarray(dataStart, dataEnd);
         const prefix = ascii(payload.subarray(0, Math.min(payload.length, 128)));
         if (prefix.startsWith("Exif\u0000\u0000")) {
+          report.exifDetected = true;
           const tiff = parseTiff(payload.subarray(6));
           applyTiffReport(tiff, report);
         } else if (/xmp|adobe/i.test(prefix) || decodeText(payload.subarray(0, Math.min(payload.length, 1024))).includes("<x:xmpmeta")) {
@@ -227,6 +229,7 @@
       }
 
       if (type === "eXIf") {
+        report.exifDetected = true;
         const payload = await readBytes(file, dataStart, Math.min(length, METADATA_PAYLOAD_LIMIT));
         report.scannedBytes += payload.length;
         applyTiffReport(parseTiff(payload), report);
@@ -320,6 +323,7 @@
           report.alpha = true;
         }
       } else if (type === "EXIF") {
+        report.exifDetected = true;
         const payload = await readBytes(file, dataStart, Math.min(length, METADATA_PAYLOAD_LIMIT));
         report.scannedBytes += payload.length;
         const start = payload.length >= 6 && ascii(payload.subarray(0, 6)) === "Exif\u0000\u0000" ? 6 : 0;
@@ -420,6 +424,7 @@
   }
 
   function applyTiffReport(tiff, report) {
+    report.exifDetected = true;
     if (!tiff || !tiff.valid) {
       addEntry(report, "exif", "Exif情報", true, "形式を十分に解析できませんでした");
       return;
@@ -461,16 +466,17 @@
     if (!report) return "分析前です";
     const sensitive = report.entries.filter((entry) => entry.sensitive).map((entry) => entry.label);
     const display = report.entries.filter((entry) => !entry.sensitive).map((entry) => entry.label);
-    if (sensitive.length) return `個人情報につながる可能性がある領域を検出しました。${sensitive.slice(0, 5).join("、")}`;
-    if (display.length) return `個人情報領域は見つかりませんでした。表示用の付加情報はあります。${display.slice(0, 4).join("、")}`;
-    return "標準的な付加情報領域は見つかりませんでした";
+    const exifText = report.exifDetected ? "Exif情報を検出しました。" : "Exif情報は検出されませんでした。";
+    if (sensitive.length) return exifText + "個人情報につながる可能性がある領域を検出しました。" + sensitive.slice(0, 5).join("、");
+    if (display.length) return exifText + "個人情報領域は見つかりませんでした。表示用の付加情報があります。" + display.slice(0, 4).join("、");
+    return exifText + "標準的な付加情報領域は見つかりませんでした";
   }
 
-  function toSafeObject(file, report) {
+  function toSafeObject(file, report, options = {}) {
     return {
       schemaVersion: 1,
       file: {
-        name: String(file.name || "image"),
+        name: String(options.fileName || file.name || "image"),
         size: file.size,
         declaredType: String(file.type || "")
       },
@@ -481,6 +487,7 @@
         orientation: report.orientation,
         alpha: report.alpha,
         animated: report.animated,
+        exifDetected: Boolean(report.exifDetected),
         sensitiveMetadataDetected: report.sensitive,
         metadataAreas: report.entries.map((entry) => ({
           label: entry.label,
