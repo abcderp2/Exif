@@ -66,7 +66,7 @@ JPEGとWebPは再圧縮されます。画質は96、92、84から選べます。
 
 ## 検索とAIクローラー
 
-HTMLでは検索エンジンによるインデックスとリンク追跡を許可しています。robots.txtには、一般クローラー、OAI-SearchBot、GPTBot、Claude-User、Claude-SearchBot、ClaudeBot、Google-Extendedへの許可を明記しています。
+HTMLでは検索エンジンによるインデックスとリンク追跡を許可しています。robots.txtには、一般クローラー、OAI-SearchBot、GPTBot、Claude-User、Claude-SearchBot、ClaudeBot、Google-Extendedへの許可を明記しています。AI向けの範囲と制限は[ai.txt](ai.txt)、正規URLは[sitemap.xml](sitemap.xml)にまとめています。
 
 このリポジトリはGitHub Pagesのプロジェクトサイトとして公開されるため、robots.txtの公開先は https://abcderp2.github.io/Exif/robots.txt です。robots.txtの標準上、ドメイン全体へ適用される正式な配置先は https://abcderp2.github.io/robots.txt です。将来、ユーザーサイト用リポジトリまたは独自ドメインを用意する場合は、同じ内容をドメイン直下へ配置してください。
 
@@ -98,7 +98,7 @@ Gitの変更はPull Request単位でまとめ、mainへはsquash mergeします�
 
 index.htmlは画面、説明、免責事項、検索公開設定、Content Security Policyを持ちます。
 
-robots.txtは一般検索と主要AIクローラーへの公開方針を記載します。
+robots.txtは一般検索と主要AIクローラーへの公開方針を記載します。ai.txtはAI向けの範囲と制限、sitemap.xmlは正規URLを記載します。
 
 styles.cssはスマートフォン、タブレット、パソコン、狭い画面、横向き、ダークモード、キーボード操作、動きを減らす設定、高コントラスト表示を担当します。
 
