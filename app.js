@@ -5,7 +5,7 @@
   const MAX_FILES = 20;
   const MAX_CANVAS_PIXELS = 32 * 1000 * 1000;
   const MAX_CANVAS_DIMENSION = 8192;
-  const WORKER_PATH = "image-worker.js?v=2.2.0";
+  const WORKER_PATH = "image-worker.js?v=2.2.1";
   const WORKER_TIMEOUT_MS = 45_000;
 
   const STATUS_LABELS = {
