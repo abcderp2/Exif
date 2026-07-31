@@ -43,6 +43,8 @@ jobs:
           test -f reports.js
           test -f image-worker.js
           test -f robots.txt
+          test -f ai.txt
+          test -f sitemap.xml
           test -f tests/release-audit.mjs
           test -f README.md
           test -f CONTRIBUTING.md
@@ -61,3 +63,6 @@ jobs:
           grep -Fq 'User-agent: Claude-SearchBot' robots.txt
           grep -Fq 'User-agent: ClaudeBot' robots.txt
           grep -Fq 'User-agent: Google-Extended' robots.txt
+          grep -Fq 'Sitemap:' robots.txt
+          grep -Fq 'Permissions-Policy' index.html
+          grep -Fq 'href="ai.txt"' index.html
