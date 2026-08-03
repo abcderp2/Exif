@@ -22,7 +22,7 @@ https://abcderp2.github.io/Exif/
 
 一度に最大20個まで追加できます。ただし、すべてを同時に展開しません。形式確認、構造分析、再エンコード、処理後検査を一件ずつ進めます。
 
-完了した画像は個別に保存でき、完了分を順番に保存する操作もあります。ブラウザやOSによっては、複数ファイルの保存許可が必要です。ZIP生成はメモリ消費と保守依存を増やすため採用していません。
+完了した画像は個別に保存でき、完了分を順番に保存することもできます。ブラウザやOSによっては、複数ファイルの保存許可が必要です。ZIP生成はメモリ消費と保守依存を増やすため採用していません。
 
 ファイル選択は最大20個、1個32MBです。合計上限は端末の性能目安に応じて48MB、64MB、96MBのいずれかになります。完了画像をブラウザ内に保持する量にも端末別の上限があります。上限に達した場合は、完了画像を保存して一覧から外してから残りを処理します。
 
@@ -52,7 +52,7 @@ JPEGとWebPは再圧縮されます。画質は96、92、84から選べます。
 
 元の大きさを優先する設定では、約32MPまたは一辺8192pxを超える画像を処理しません。
 
-対応ブラウザではOffscreenCanvasとWorkerへ再エンコードを分けます。Workerが使えない場合はメインスレッドへ戻ります。Worker処理が45秒を超えた場合は、端末が長時間固まる可能性を下げるため中止します。
+対応ブラウザでは、WorkerとOffscreenCanvasを使って再エンコードをメインスレッドから分離します。Workerが使えない場合はメインスレッドへ戻ります。Worker処理が45秒を超えた場合は、端末が長時間固まる可能性を下げるため中止します。
 
 メインスレッドで使ったCanvasは処理後に縮小し、Object URLは再処理、削除、リセット、ページ終了時に解放します。
 
@@ -82,7 +82,7 @@ HTMLでは検索エンジンによるインデックスとリンク追跡を許�
 
 入力画像をlocalStorage、sessionStorage、IndexedDB、Cookie、URL、ログへ保存しません。
 
-SVGやHTMLなど、動作する内容を持てる形式は受け付けません。対応範囲をJPEG、PNG、WebPへ限定し、攻撃面と保守範囲を小さくしています。
+SVGやHTMLなど、スクリプトを実行できる形式は受け付けません。対応範囲をJPEG、PNG、WebPへ限定し、攻撃面と保守範囲を小さくしています。
 
 詳しい前提と報告方法はSECURITY.mdを参照してください。
 
@@ -120,9 +120,13 @@ tests/release-audit.mjsは有効なJPEGへExifとGPS領域を付けた入力を�
 
 .github/workflows/browser-audit.ymlはPull Request、mainへの反映、手動実行時に構文検査、単体テスト、ブラウザ監査を実行します。main反映時はGitHub Pagesへ今回の版が配信されるまで待ち、公開URLでもrelease-auditを実行します。Playwrightは監査時だけ固定版を一時インストールし、公開サイトの実行時依存関係にはしません。
 
+MAINTENANCE.mdは、変更、確認、公開、切り戻しの手順をまとめた保守用の基準です。
+
 exif_remover.pyはPillowを使う別用途のローカルCLIです。Web版の実行には使いません。
 
 ## 保守方法
+
+詳細な変更、確認、公開、切り戻しは[MAINTENANCE.md](MAINTENANCE.md)にまとめています。
 
 ビルド工程と実行時依存関係はありません。静的ファイルをそのままGitHub Pagesで配信します。通常の修正はHTML、CSS、JavaScriptの該当ファイルだけで完結します。
 
@@ -149,7 +153,7 @@ node tests/browser-audit.mjs
 AUDIT_RELEASE_TARGET=http://127.0.0.1:8000/ node tests/release-audit.mjs
 ```
 
-通常はPull Requestを作成するとGitHub Actionsが同じ監査を自動実行します。変更時の確認事項はCONTRIBUTING.mdにまとめています。
+通常はPull Requestを作成するとGitHub Actionsが同じ監査を自動実行します。変更時の確認事項はCONTRIBUTING.md、公開後の手順はMAINTENANCE.mdにまとめています。
 
 ## 無料運用
 
