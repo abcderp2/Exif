@@ -126,6 +126,21 @@ test("WebP analysis finds canvas size, alpha, and XMP", async () => {
   assert.ok(report.entries.some((entry) => entry.key === "xmp"));
 });
 
+test("pre-decode safety rejects incomplete, oversized, and animated inputs", () => {
+  const limits = { maxPixels: 12_000_000, maxDimension: 8192, maxFrames: 120, maxTotalPixels: 12_000_000 };
+  const safe = Metadata.validateDecodeSafety({ width: 4000, height: 2000, animated: false, frameCount: 1, structureIssues: [], scanComplete: true }, limits);
+  assert.equal(safe.ok, true);
+
+  const incomplete = Metadata.validateDecodeSafety({ width: 4000, height: 2000, animated: false, frameCount: 1, structureIssues: [], scanComplete: false }, limits);
+  assert.deepEqual(incomplete, { ok: false, code: "SCAN_INCOMPLETE" });
+
+  const oversized = Metadata.validateDecodeSafety({ width: 5000, height: 5000, animated: false, frameCount: 1, structureIssues: [], scanComplete: true }, limits);
+  assert.deepEqual(oversized, { ok: false, code: "PIXEL_LIMIT" });
+
+  const animated = Metadata.validateDecodeSafety({ width: 2000, height: 1000, animated: true, frameCount: 7, structureIssues: [], scanComplete: true }, limits);
+  assert.deepEqual(animated, { ok: false, code: "TOTAL_PIXEL_LIMIT" });
+});
+
 test("safe report contains categories but no raw metadata values", async () => {
   const file = new File([makePng()], "photo.png", { type: "image/png" });
   const report = await Metadata.inspectFile(file, "png");
