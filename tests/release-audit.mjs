@@ -126,7 +126,7 @@ async function testExifRemoval(page) {
   await page.waitForFunction(() => document.querySelector('.result-item[data-status="success"]'), null, { timeout: 60000 });
 
   const successText = await page.locator(".success-message").innerText();
-  assert(successText.includes("個人情報領域がないことを確認"));
+  assert(successText.includes("検査対象のExifなどの付加情報領域がないことを確認"));
 
   const [imageDownload] = await Promise.all([
     page.waitForEvent("download"),
@@ -139,7 +139,7 @@ async function testExifRemoval(page) {
   const detected = await Metadata.detectFile(outputFile);
   assert.equal(detected?.key, "jpeg", "Exif除去後の画像がJPEGとして確認できませんでした");
   const outputReport = await Metadata.inspectFile(outputFile, "jpeg");
-  assert.equal(outputReport.sensitive, false, "Exif除去後の画像に個人情報領域が残っています");
+  assert.equal(outputReport.sensitive, false, "Exif除去後の画像に検査対象の付加情報領域が残っています");
   assert.deepEqual(outputReport.structureIssues, [], "Exif除去後の画像に構造異常があります");
   assert.equal(outputReport.entries.some((entry) => entry.key === "gps" || entry.key === "exif"), false, "ExifまたはGPS領域が残っています");
 

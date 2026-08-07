@@ -93,7 +93,7 @@ async function auditTarget(target) {
   if (target.requireGlobalDrop) await testGlobalDrop(page);
   await testInputDetection(page);
   if (target.requireBatchExports) await testBatchExports(page);
-  await testConversions(page);
+  await testConversions(page, target.requireBatchExports);
   if (target.requireBatchExports) await testFileNameModes(page);
   await testLowEndScaling(page, target.requireBatchExports ? 4_000_000 : 8_000_000);
   if (target.requireBatchExports) await testOversizedHeaderIsRejectedBeforeDecode(page);
@@ -237,7 +237,7 @@ async function testFileNameModes(page) {
   await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
 }
 
-async function testConversions(page) {
+async function testConversions(page, requireCurrentCopy) {
   const outputs = [
     { key: "jpeg", mime: "image/jpeg", extension: ".jpg", magic: [0xff, 0xd8, 0xff] },
     { key: "png", mime: "image/png", extension: ".png", magic: [0x89, 0x50, 0x4e, 0x47] },
@@ -254,7 +254,11 @@ async function testConversions(page) {
     await page.waitForFunction(() => document.querySelector('.result-item[data-status="success"]'));
 
     const successText = await page.locator(".success-message").innerText();
-    assert(successText.includes("個人情報領域がないことを確認"));
+    if (requireCurrentCopy) {
+      assert(successText.includes("検査対象のExifなどの付加情報領域がないことを確認"));
+    } else {
+      assert(successText.includes("個人情報領域がないことを確認") || successText.includes("検査対象のExifなどの付加情報領域がないことを確認"));
+    }
 
     const [imageDownload] = await Promise.all([
       page.waitForEvent("download"),

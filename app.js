@@ -920,7 +920,7 @@
 
       const verified = document.createElement("p");
       verified.className = "result-message success-message";
-      verified.textContent = "処理後の形式構造を再確認し、Exifなどの個人情報領域がないことを確認しました";
+      verified.textContent = "処理後の形式構造を再確認し、検査対象のExifなどの付加情報領域がないことを確認しました。画像に写った情報は判定・削除しません";
       article.appendChild(verified);
     }
 
@@ -969,7 +969,7 @@
     const details = document.createElement("details");
     details.className = "analysis-details";
     const summary = document.createElement("summary");
-    summary.textContent = report.sensitive ? "分析結果　付加情報あり" : "分析結果　個人情報領域なし";
+    summary.textContent = report.sensitive ? "分析結果　付加情報あり" : "分析結果　検査対象の付加情報なし";
     details.appendChild(summary);
 
     const overview = document.createElement("p");

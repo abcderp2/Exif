@@ -528,7 +528,7 @@
     const display = report.entries.filter((entry) => !entry.sensitive).map((entry) => entry.label);
     const exifText = report.exifDetected ? "Exif情報を検出しました。" : "Exif情報は検出されませんでした。";
     if (sensitive.length) return exifText + "個人情報につながる可能性がある領域を検出しました。" + sensitive.slice(0, 5).join("、");
-    if (display.length) return exifText + "個人情報領域は見つかりませんでした。表示用の付加情報があります。" + display.slice(0, 4).join("、");
+    if (display.length) return exifText + "検査対象の個人情報につながる付加情報領域は見つかりませんでした。表示用の付加情報があります。" + display.slice(0, 4).join("、");
     return exifText + "標準的な付加情報領域は見つかりませんでした";
   }
 
