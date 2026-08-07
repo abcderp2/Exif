@@ -5,7 +5,9 @@
   const MAX_FILES = 20;
   const MAX_CANVAS_PIXELS = 32 * 1000 * 1000;
   const MAX_CANVAS_DIMENSION = 8192;
-  const WORKER_PATH = "image-worker.js?v=2.2.1";
+  const MAX_INPUT_FRAMES = 120;
+  const MIN_SAFE_HEADER_PIXELS = 12 * 1000 * 1000;
+  const WORKER_PATH = "image-worker.js?v=2.2.2";
   const WORKER_TIMEOUT_MS = 45_000;
 
   const STATUS_LABELS = {
@@ -181,7 +183,7 @@
         ? "元の名前を使わず、image-001のような連番にします。匿名化を選ぶと分析レポートの名前も匿名化します。"
         : "元の名前に-cleanを付けます。";
     const sizeText = safeMode
-      ? "大きな画像は、この端末の安全目安である約" + formatPixels(deviceProfile.pixelBudget) + "まで縮小します。"
+      ? "大きな画像は、復号前に端末別の入力上限を確認し、その範囲でこの端末の安全目安である約" + formatPixels(deviceProfile.pixelBudget) + "まで縮小します。"
       : "元の大きさを優先しますが、約" + formatPixels(MAX_CANVAS_PIXELS) + "または一辺" + MAX_CANVAS_DIMENSION + "pxを超える画像は処理しません。";
     const alphaText = formatValue === "jpeg" ? "透明部分は白になります。" : "";
     elements.settingsNote.textContent = fileNameText + formatText + "で保存します。JPEGとWebPの画質は" + quality + "です。" + alphaText + "すべての出力でExifなどの付加情報を引き継ぎません。" + sizeText;
@@ -321,10 +323,11 @@
       try {
         item.metadata = await ImageMetadata.inspectFile(file, detected.key);
         if (state.runId !== analysisRunId) return;
+        validateInputForDecode(item.metadata, MAX_CANVAS_PIXELS);
         item.status = "waiting";
       } catch (error) {
         item.status = "error";
-        item.error = "画像の構造を確認できませんでした。別の画像として保存し直してから試してください";
+        item.error = normalizeError(error);
       }
       render();
       await yieldToBrowser();
@@ -398,7 +401,8 @@
     try {
       const spec = chooseOutput(item.format.key);
       if (!spec || !outputSupport[spec.key]) throw new Error("選択した形式で保存できないブラウザです");
-      const encoded = await encodeRaster(item.file, spec);
+      const inputSafety = validateInputForDecode(item.metadata);
+      const encoded = await encodeRaster(item.file, spec, inputSafety);
       if (state.runId !== runId) return;
       if (!encoded.blob || encoded.blob.type !== spec.type) throw new Error(`${spec.label}形式で正しく保存できませんでした`);
 
@@ -454,13 +458,13 @@
     return Array.from(new Set(values)).join("。 ");
   }
 
-  async function encodeRaster(file, spec) {
-    const workerResult = await tryWorkerEncode(file, spec);
+  async function encodeRaster(file, spec, inputSafety) {
+    const workerResult = await tryWorkerEncode(file, spec, inputSafety);
     if (workerResult) return workerResult;
-    return encodeOnMain(file, spec);
+    return encodeOnMain(file, spec, inputSafety);
   }
 
-  async function tryWorkerEncode(file, spec) {
+  async function tryWorkerEncode(file, spec, inputSafety) {
     if (!window.Worker || !window.OffscreenCanvas || !window.createImageBitmap) return null;
     try {
       return await requestWorker({
@@ -469,6 +473,9 @@
         quality: Number(elements.qualitySelect.value),
         maxPixels: getPixelLimit(),
         maxDimension: MAX_CANVAS_DIMENSION,
+        maxDecodePixels: inputSafety.maxPixels,
+        maxFrames: inputSafety.maxFrames,
+        maxTotalPixels: inputSafety.maxTotalPixels,
         fillWhite: spec.key === "jpeg",
         allowScale: elements.largeImageSelect.value === "safe"
       });
@@ -537,7 +544,7 @@
     state.workerRequests.clear();
   }
 
-  async function encodeOnMain(file, spec) {
+  async function encodeOnMain(file, spec, inputSafety) {
     let source = null;
     let sourceUrl = "";
     let canvas = null;
@@ -557,6 +564,7 @@
       const sourceWidth = source.naturalWidth || source.width;
       const sourceHeight = source.naturalHeight || source.height;
       if (!sourceWidth || !sourceHeight) throw new Error("画像の大きさを確認できません");
+      if (!dimensionsMatchHeader(sourceWidth, sourceHeight, inputSafety)) throw new Error("復号後の画像サイズがヘッダーと一致しません");
       const target = fitDimensions(
         sourceWidth,
         sourceHeight,
@@ -610,6 +618,44 @@
 
   function getPixelLimit() {
     return elements.largeImageSelect.value === "safe" ? deviceProfile.pixelBudget : MAX_CANVAS_PIXELS;
+  }
+
+  function getHeaderPixelLimit() {
+    if (elements.largeImageSelect.value !== "safe") return MAX_CANVAS_PIXELS;
+    return Math.min(MAX_CANVAS_PIXELS, Math.max(MIN_SAFE_HEADER_PIXELS, getPixelLimit() * 3));
+  }
+
+  function decodeSafetyMessage(code) {
+    const messages = {
+      STRUCTURE_ISSUE: "画像の構造に不整合があるため、復号する前に処理を止めました",
+      SCAN_INCOMPLETE: "画像の構造を最後まで確認できないため、復号する前に処理を止めました",
+      DIMENSIONS_UNKNOWN: "画像の縦横を確認できないため、復号する前に処理を止めました",
+      DIMENSION_LIMIT: "画像の縦横が復号前の安全上限を超えています",
+      PIXEL_LIMIT: "画像の総画素数が復号前の安全上限を超えています",
+      FRAME_LIMIT: "アニメーションのフレーム数が復号前の安全上限を超えています",
+      TOTAL_PIXEL_LIMIT: "アニメーションの総画素数が復号前の安全上限を超えています"
+    };
+    return messages[code] || "復号前の画像検査に失敗しました";
+  }
+
+  function validateInputForDecode(metadata, maxPixels = getHeaderPixelLimit()) {
+    const safety = ImageMetadata.validateDecodeSafety(metadata, {
+      maxPixels,
+      maxDimension: MAX_CANVAS_DIMENSION,
+      maxFrames: MAX_INPUT_FRAMES,
+      maxTotalPixels: maxPixels
+    });
+    if (!safety.ok) {
+      const error = new Error(decodeSafetyMessage(safety.code));
+      error.code = `HEADER_${safety.code}`;
+      throw error;
+    }
+    return { ...safety, orientation: Number(metadata.orientation) || 1 };
+  }
+
+  function dimensionsMatchHeader(width, height, header) {
+    if (width === header.width && height === header.height) return true;
+    return [5, 6, 7, 8].includes(Number(header.orientation)) && width === header.height && height === header.width;
   }
 
   function fitDimensions(width, height, pixelLimit, dimensionLimit, allowScale) {
