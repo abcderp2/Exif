@@ -96,6 +96,7 @@ async function auditTarget(target) {
   await testConversions(page);
   if (target.requireBatchExports) await testFileNameModes(page);
   await testLowEndScaling(page, target.requireBatchExports ? 4_000_000 : 8_000_000);
+  if (target.requireBatchExports) await testOversizedHeaderIsRejectedBeforeDecode(page);
 
   assert.deepEqual(outsideRequests, [], `${target.name}が外部へ通信しました: ${outsideRequests.join(", ")}`);
   assert.deepEqual(failedRequests, [], `${target.name}で通信失敗が発生しました: ${failedRequests.join(", ")}`);
@@ -305,6 +306,27 @@ async function testLowEndScaling(page, expectedPixelLimit) {
   await page.locator("#resetButton").click();
 }
 
+async function testOversizedHeaderIsRejectedBeforeDecode(page) {
+  await setRawFile(page, {
+    name: "oversized-header.png",
+    type: "image/png",
+    bytes: Array.from(makePngHeader(5000, 5000))
+  });
+  await waitForReadyItems(page, 1);
+
+  await page.evaluate(() => {
+    window.Worker = undefined;
+    window.createImageBitmap = undefined;
+  });
+  await page.locator("#startButton").click();
+  await page.waitForFunction(() => document.querySelector('.result-item[data-status="error"]'), null, { timeout: 30000 });
+  const error = await page.locator(".error-message").innerText();
+  assert(error.includes("復号前の安全上限"), "巨大な画像ヘッダーを復号前に拒否できませんでした");
+
+  await page.locator("#resetButton").click();
+  await page.waitForFunction(() => document.querySelectorAll(".result-item").length === 0);
+}
+
 async function waitForReadyItems(page, count) {
   await page.waitForFunction(
     (expected) => {
@@ -351,4 +373,17 @@ async function setRawFile(page, { name, type, bytes }) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, { name, type, bytes });
+}
+
+function makePngHeader(width, height) {
+  const bytes = new Uint8Array(45);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  bytes.set([0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52], 8);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  bytes[24] = 8;
+  bytes[25] = 2;
+  bytes.set([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44], 33);
+  return bytes;
 }
