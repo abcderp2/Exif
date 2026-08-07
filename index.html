@@ -12,9 +12,9 @@
   <title>画像メタデータクリーナー</title>
   <meta name="description" content="JPEG、PNG、WebPを端末内だけで一括処理し、Exifなどの付加情報を引き継がない画像と安全なJSON、CSV分析結果を作る無料ツールです。">
   <link rel="stylesheet" href="styles.css">
-  <script src="metadata.js?v=2.2.1" defer></script>
+  <script src="metadata.js?v=2.2.2" defer></script>
   <script src="reports.js?v=2.2.0" defer></script>
-  <script src="app.js?v=2.2.1" defer></script>
+  <script src="app.js?v=2.2.2" defer></script>
 </head>
 <body>
   <noscript>
@@ -172,7 +172,7 @@
       <div class="notice-grid">
         <article>
           <h3>付加情報をコピーしない</h3>
-          <p>画像を画素へ展開してから新しく保存します。入力にあったExif、GPS、XMP、IPTC、コメント、埋め込みサムネイルは引き継ぎません。</p>
+          <p>画像を画素へ展開してから新しく保存します。入力にあったExif、GPS、XMP、IPTC、コメント、埋め込みサムネイルは引き継ぎません。顔、住所、文字、ナンバープレート、透かしなど、画像に写った画素情報は判定・削除しません。</p>
         </article>
         <article>
           <h3>複数画像も一件ずつ処理する</h3>
