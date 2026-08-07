@@ -79,6 +79,7 @@
       orientation: 1,
       alpha: false,
       animated: false,
+      frameCount: 1,
       exifDetected: false,
       entries: [],
       sensitive: false,
@@ -204,6 +205,10 @@
       addIssue(report, "PNGの基本構造を確認できませんでした");
       return;
     }
+    if (readUint32BE(first, 8) !== 13 || ascii(first.subarray(12, 16)) !== "IHDR") {
+      addIssue(report, "PNGの先頭区切りを確認できませんでした");
+      return;
+    }
     report.width = readUint32BE(first, 16);
     report.height = readUint32BE(first, 20);
     const colorType = first[25];
@@ -253,6 +258,11 @@
         addEntry(report, "resolution", "解像度設定", false, "PNG pHYs");
       } else if (type === "acTL") {
         report.animated = true;
+        const payload = await readBytes(file, dataStart, Math.min(length, 8));
+        report.scannedBytes += payload.length;
+        const frameCount = readUint32BE(payload, 0);
+        if (payload.length < 8 || frameCount < 1) addIssue(report, "PNGアニメーションのフレーム数を確認できませんでした");
+        else report.frameCount = frameCount;
       } else if (type === "IEND") {
         sawEnd = true;
       } else if (type[0] === type[0].toLowerCase() && !["IDAT"].includes(type)) {
@@ -283,6 +293,7 @@
 
     let offset = 12;
     let chunks = 0;
+    let animationFrames = 0;
     while (offset + 8 <= file.size && chunks < MAX_CHUNKS) {
       const header = await readBytes(file, offset, 8);
       report.scannedBytes += header.length;
@@ -336,14 +347,18 @@
         addEntry(report, "xmp", "XMP情報", true, "WebP XMP");
       } else if (type === "ICCP") {
         addEntry(report, "icc", "色設定", false, "ICCプロファイル");
-      } else if (type === "ANIM" || type === "ANMF") {
+      } else if (type === "ANIM") {
         report.animated = true;
+      } else if (type === "ANMF") {
+        report.animated = true;
+        animationFrames += 1;
       } else if (type === "LIST") {
         addEntry(report, "list", "アプリ固有情報", true, "WebP LIST");
       }
       offset = next;
       chunks += 1;
     }
+    if (animationFrames) report.frameCount = animationFrames;
     if (chunks >= MAX_CHUNKS) {
       report.scanComplete = false;
       addWarning(report, "WebPの区切り数が多いため確認を打ち切りました");
@@ -462,6 +477,51 @@
     return report;
   }
 
+  function positiveSafeInteger(value, fallback) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+  }
+
+  function validateDecodeSafety(report, options = {}) {
+    const maxPixels = positiveSafeInteger(options.maxPixels, 32_000_000);
+    const maxDimension = positiveSafeInteger(options.maxDimension, 8192);
+    const maxFrames = positiveSafeInteger(options.maxFrames, 120);
+    const maxTotalPixels = positiveSafeInteger(options.maxTotalPixels, maxPixels);
+    const issues = Array.isArray(report?.structureIssues) ? report.structureIssues : [];
+    if (issues.length) return { ok: false, code: "STRUCTURE_ISSUE" };
+    if (!report?.scanComplete) return { ok: false, code: "SCAN_INCOMPLETE" };
+
+    const width = Number(report?.width);
+    const height = Number(report?.height);
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
+      return { ok: false, code: "DIMENSIONS_UNKNOWN" };
+    }
+    if (width > maxDimension || height > maxDimension) return { ok: false, code: "DIMENSION_LIMIT" };
+
+    const pixels = width * height;
+    if (!Number.isSafeInteger(pixels) || pixels > maxPixels) return { ok: false, code: "PIXEL_LIMIT" };
+
+    const frameCount = report?.animated ? Number(report?.frameCount) : 1;
+    if (!Number.isSafeInteger(frameCount) || frameCount < 1 || frameCount > maxFrames) {
+      return { ok: false, code: "FRAME_LIMIT" };
+    }
+    const totalPixels = pixels * frameCount;
+    if (!Number.isSafeInteger(totalPixels) || totalPixels > maxTotalPixels) return { ok: false, code: "TOTAL_PIXEL_LIMIT" };
+
+    return {
+      ok: true,
+      width,
+      height,
+      pixels,
+      frameCount,
+      totalPixels,
+      maxPixels,
+      maxDimension,
+      maxFrames,
+      maxTotalPixels
+    };
+  }
+
   function summary(report) {
     if (!report) return "分析前です";
     const sensitive = report.entries.filter((entry) => entry.sensitive).map((entry) => entry.label);
@@ -487,6 +547,7 @@
         orientation: report.orientation,
         alpha: report.alpha,
         animated: report.animated,
+        frameCount: report.frameCount,
         exifDetected: Boolean(report.exifDetected),
         sensitiveMetadataDetected: report.sensitive,
         metadataAreas: report.entries.map((entry) => ({
@@ -524,6 +585,7 @@
     detectBufferFormat,
     detectFile,
     inspectFile,
+    validateDecodeSafety,
     summary,
     toSafeObject
   });
