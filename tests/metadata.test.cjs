@@ -148,4 +148,6 @@ test("safe report contains categories but no raw metadata values", async () => {
   const serialized = JSON.stringify(safe);
   assert.match(serialized, /説明とコメント/);
   assert.doesNotMatch(serialized, /private note/);
+  const displayOnly = { ...report, sensitive: false, entries: [{ label: "色設定", sensitive: false }] };
+  assert.match(Metadata.summary(displayOnly), /検査対象の個人情報につながる付加情報領域/);
 });
