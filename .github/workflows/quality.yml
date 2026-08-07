@@ -32,7 +32,9 @@ jobs:
       - name: Run npm verification
         run: npm run verify
       - name: Check Python syntax
-        run: python3 -m py_compile exif_remover.py
+        run: |
+          python3 -I -m py_compile exif_remover.py
+          python3 -I tests/exif_remover.test.py
       - name: Check required files and local references
         shell: bash
         run: |
@@ -46,6 +48,7 @@ jobs:
           test -f ai.txt
           test -f sitemap.xml
           test -f tests/release-audit.mjs
+          test -f tests/exif_remover.test.py
           test -f README.md
           test -f CONTRIBUTING.md
           test -f SECURITY.md
