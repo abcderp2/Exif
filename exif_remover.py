@@ -6,11 +6,22 @@ from __future__ import annotations
 import argparse
 import glob
 import sys
+import warnings
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
-from PIL import Image, ImageOps, ImageSequence
+try:
+    from PIL import Image, ImageOps, ImageSequence
+except ImportError:  # Pillow is optional for the browser-only use case.
+    Image = ImageOps = ImageSequence = None
 
+
+MAX_INPUT_BYTES = 32 * 1024 * 1024
+MAX_SOURCE_DIMENSION = 8192
+MAX_SOURCE_PIXELS = 32_000_000
+MAX_FRAMES = 120
+MAX_TOTAL_FRAME_PIXELS = 32_000_000
 
 OUTPUT_FORMATS = {
     ".jpg": ("JPEG", ".jpg"),
@@ -22,6 +33,67 @@ OUTPUT_FORMATS = {
     ".tiff": ("TIFF", ".tiff"),
     ".bmp": ("BMP", ".bmp"),
 }
+
+
+def require_pillow() -> None:
+    if Image is None or ImageOps is None or ImageSequence is None:
+        raise RuntimeError("このコマンドにはPillowが必要です。Pillowをインストールしてから実行してください")
+
+
+def source_frame_count(source: Image.Image) -> int:
+    try:
+        frame_count = int(getattr(source, "n_frames", 1))
+    except (TypeError, ValueError) as error:
+        raise ValueError("画像のフレーム数を確認できません") from error
+    if frame_count < 1:
+        raise ValueError("画像のフレーム数が不正です")
+    return frame_count
+
+
+def validate_source_limits(source: Image.Image) -> tuple[int, int, int]:
+    """Pillowが完全復号する前に、ヘッダー由来の値を安全上限と照合する。"""
+
+    try:
+        width, height = source.size
+        width = int(width)
+        height = int(height)
+    except (TypeError, ValueError) as error:
+        raise ValueError("画像の大きさを確認できません") from error
+    if width < 1 or height < 1:
+        raise ValueError("画像の大きさが不正です")
+    if width > MAX_SOURCE_DIMENSION or height > MAX_SOURCE_DIMENSION:
+        raise ValueError(f"画像の縦横が上限{MAX_SOURCE_DIMENSION}pxを超えています")
+
+    pixels = width * height
+    if pixels > MAX_SOURCE_PIXELS:
+        raise ValueError(f"画像の総画素数が上限{MAX_SOURCE_PIXELS:,}を超えています")
+
+    frame_count = source_frame_count(source)
+    if frame_count > MAX_FRAMES:
+        raise ValueError(f"アニメーションのフレーム数が上限{MAX_FRAMES}を超えています")
+    if pixels * frame_count > MAX_TOTAL_FRAME_PIXELS:
+        raise ValueError(f"アニメーションを含む総画素数が上限{MAX_TOTAL_FRAME_PIXELS:,}を超えています")
+    return width, height, frame_count
+
+
+@contextmanager
+def open_checked_image(input_path: Path) -> Iterator[Image.Image]:
+    """入力サイズ、PillowのBomb判定、ヘッダー値を確認してから画像を開く。"""
+
+    require_pillow()
+    if input_path.stat().st_size > MAX_INPUT_BYTES:
+        raise ValueError(f"入力ファイルが上限{MAX_INPUT_BYTES // (1024 * 1024)}MBを超えています")
+
+    previous_max_pixels = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = MAX_SOURCE_PIXELS
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(input_path) as source:
+                validate_source_limits(source)
+                yield source
+    finally:
+        Image.MAX_IMAGE_PIXELS = previous_max_pixels
 
 
 def clean_frame(frame: Image.Image) -> Image.Image:
@@ -66,27 +138,49 @@ def make_output_path(input_path: Path, output_dir: Path | None, extension: str) 
     return directory / f"{input_path.stem}_no_metadata{extension}"
 
 
+def frame_durations(source: Image.Image, expected_frames: int) -> list[int]:
+    durations: list[int] = []
+    for index, frame in enumerate(ImageSequence.Iterator(source), start=1):
+        if index > MAX_FRAMES:
+            raise ValueError(f"アニメーションのフレーム数が上限{MAX_FRAMES}を超えています")
+        durations.append(int(frame.info.get("duration", 0) or 0))
+    if len(durations) != expected_frames:
+        raise ValueError("アニメーションのフレーム数を一貫して確認できません")
+    source.seek(0)
+    return durations
+
+
+def cleaned_frames(source: Image.Image) -> Iterator[Image.Image]:
+    for index, frame in enumerate(ImageSequence.Iterator(source), start=1):
+        if index > MAX_FRAMES:
+            raise ValueError(f"アニメーションのフレーム数が上限{MAX_FRAMES}を超えています")
+        yield clean_frame(frame)
+
+
+def prepare_frame_for_output(frame: Image.Image, output_format: str) -> Image.Image:
+    if output_format == "JPEG":
+        return flatten_for_jpeg(frame)
+    if output_format == "BMP":
+        return frame.convert("RGB")
+    if output_format == "GIF":
+        return frame.convert("RGBA")
+    return frame
+
+
 def save_clean_image(input_path: Path, output_path: Path, quality: int) -> None:
-    with Image.open(input_path) as source:
+    with open_checked_image(input_path) as source:
         output_format, _ = output_definition(input_path, source)
+        frame_count = source_frame_count(source)
+        preserve_animation = output_format in {"GIF", "WEBP"} and frame_count > 1
+        durations = frame_durations(source, frame_count) if preserve_animation else []
+        frames = cleaned_frames(source)
+        try:
+            first_frame = next(frames)
+        except StopIteration as error:
+            raise ValueError("画像のフレームを読み込めません") from error
+        first_frame = prepare_frame_for_output(first_frame, output_format)
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        frames: list[Image.Image] = []
-        durations: list[int] = []
-        for frame in ImageSequence.Iterator(source):
-            frames.append(clean_frame(frame))
-            durations.append(int(frame.info.get("duration", 0) or 0))
-
-        if not frames:
-            raise ValueError("画像のフレームを読み込めません")
-
-        if output_format == "JPEG":
-            frames = [flatten_for_jpeg(frames[0])]
-        elif output_format == "BMP":
-            frames = [frames[0].convert("RGB")]
-        elif output_format == "GIF":
-            frames = [frame.convert("RGBA") for frame in frames]
-
         save_kwargs: dict[str, object] = {"format": output_format}
         if output_format == "JPEG":
             save_kwargs.update({"quality": quality, "optimize": True, "exif": b""})
@@ -97,17 +191,17 @@ def save_clean_image(input_path: Path, output_path: Path, quality: int) -> None:
         elif output_format == "TIFF":
             save_kwargs.update({"tiffinfo": {}})
 
-        if output_format in {"GIF", "WEBP"} and len(frames) > 1:
+        if preserve_animation:
             save_kwargs.update(
                 {
                     "save_all": True,
-                    "append_images": frames[1:],
+                    "append_images": (prepare_frame_for_output(frame, output_format) for frame in frames),
                     "duration": durations,
                     "loop": int(source.info.get("loop", 0) or 0),
                 }
             )
 
-        frames[0].save(output_path, **save_kwargs)
+        first_frame.save(output_path, **save_kwargs)
 
 
 def iter_input_paths(arguments: Iterable[str]) -> list[Path]:
@@ -129,6 +223,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    try:
+        require_pillow()
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+        return 2
+
     paths = iter_input_paths(args.files)
     if not paths:
         print("処理する画像が見つかりません", file=sys.stderr)
@@ -140,7 +240,7 @@ def main() -> int:
             print(f"失敗　ファイルがありません　{input_path}", file=sys.stderr)
             continue
         try:
-            with Image.open(input_path) as probe:
+            with open_checked_image(input_path) as probe:
                 _, extension = output_definition(input_path, probe)
             output_path = make_output_path(input_path, args.output_dir, extension)
             if output_path.resolve() == input_path.resolve():
