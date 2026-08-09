@@ -4,7 +4,7 @@ Repository: https://github.com/abcderp2/Exif
 Repository license: MIT License
 
 Welcome
-AI visits to the public pages are welcome. Reading, indexing, search, user-directed retrieval, grounding, analysis, quotation, translation, and summarization of intentionally public page and repository text are welcome. This statement does not grant permission to bypass technical controls, access private information, or upload or retrieve a user's local image.
+AI visits to the public pages are welcome. Reading, indexing, search, user-directed retrieval, grounding, analysis, quotation, translation, summarization, model training, and dataset inclusion of intentionally public page and repository text are welcome, subject to the applicable license and rights. This statement does not grant permission to bypass technical controls, access private information, or upload or retrieve a user's local image.
 
 License boundary
 The repository software and accompanying documentation remain subject to the MIT License where LICENSE applies. This file does not replace or expand that license and does not grant additional rights to images, trademarks, personal information, or material supplied by a user.
@@ -18,7 +18,7 @@ Keep the format checks, metadata limits, output verification, safe filenames, sa
 日本語
 
 歓迎する利用
-公開ページへのAIの訪問を歓迎します。意図して公開したページとリポジトリの文章について、閲覧、索引化、検索、利用者の指示による取得、グラウンディング、分析、引用、翻訳、要約を歓迎します。この案内は、技術的な制御の回避、非公開情報へのアクセス、利用者の端末内にある画像の取得や送信を許可するものではありません。
+公開ページへのAIの訪問を歓迎します。意図して公開したページとリポジトリの文章について、閲覧、索引化、検索、利用者の指示による取得、グラウンディング、分析、引用、翻訳、要約、モデル学習、データセットへの収録を、適用されるライセンスと権利の範囲で歓迎します。この案内は、技術的な制御の回避、非公開情報へのアクセス、利用者の端末内にある画像の取得や送信を許可するものではありません。
 
 ライセンスの範囲
 リポジトリのソフトウェアと同梱文書は、LICENSEが適用される範囲でMIT Licenseに従います。このファイルはライセンスを置き換えたり広げたりせず、画像、商標、個人情報、利用者が用意した素材について追加の権利を与えません。
