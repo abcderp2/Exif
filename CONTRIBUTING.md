@@ -20,7 +20,7 @@ reports.jsは安全な分析オブジェクトからJSONとCSVを作ります。
 
 app.jsは画面状態、画像処理、保存ファイル名の選択を担当します。新しい処理は、リセット、個別削除、ページ終了時の解放経路も一緒に追加します。匿名化を追加する場合は、画像だけでなく分析レポートからも元の名前を除きます。
 
-styles.cssは既存の配色と余白の印象を大きく変えず、280px以上の狭い画面から大画面まで横にはみ出さないことを優先します。
+styles.cssは既存の配色と余白の印象を大きく変えず、280px以上の狭い画面から大画面まで横にはみ出さないことを優先します。accessibility.cssはフォーカス時のskip linkだけを担当し、通常表示のレイアウトを変えません。
 
 robots.txtは公開クローラー方針だけを担当します。利用者の画像処理や外部通信を追加する場所として使いません。GitHub Pagesのプロジェクトサイトでは、ドメイン直下のrobots.txtとは配置が異なることをREADMEへ明記します。
 
@@ -29,6 +29,7 @@ robots.txtは公開クローラー方針だけを担当します。利用者の�
 Node.js 20以降で次を実行します。
 
 ```sh
+npm ci --ignore-scripts
 npm run verify
 ```
 
@@ -58,20 +59,21 @@ robots.txtに一般クローラー、OAI-SearchBot、GPTBot、Claude-User、Clau
 
 Pull Requestを作成すると.github/workflows/browser-audit.ymlが自動実行されます。
 
-tests/browser-audit.mjsはローカル版と公開版で基本機能を操作します。tests/release-audit.mjsはExifとGPS付きJPEGの除去、一括レポート、ドラッグ操作、順次保存、robots.txt、不要な免責リンクがないことを確認します。
+tests/accessibility-audit.mjsはフォーム部品のアクセシブルネーム、ファイル入力の説明関連付け、skip linkを確認します。tests/browser-audit.mjsはローカル版と公開版で基本機能を操作します。tests/release-audit.mjsはExifとGPS付きJPEGの除去、一括レポート、ドラッグ操作、順次保存、robots.txt、不要な免責リンクがないことを確認します。
 
 mainへの反映時は、GitHub Pagesに今回のrobots.txtが配信されるまで待ってから、公開URLに対してrelease-auditを実行します。
 
 手元で再実行する場合は、ローカルサーバーを起動したうえで次を実行します。
 
 ```sh
-npm install --no-save --no-package-lock @playwright/test@1.55.0
+npm ci --ignore-scripts
 npx playwright install chromium
+AUDIT_LOCAL_URL=http://127.0.0.1:8000/ node tests/accessibility-audit.mjs
 node tests/browser-audit.mjs
 AUDIT_RELEASE_TARGET=http://127.0.0.1:8000/ node tests/release-audit.mjs
 ```
 
-Playwrightは監査時だけ使います。公開サイトの実行時依存関係へ追加しません。
+Playwrightはpackage-lock.jsonで固定した開発依存として監査時だけ使います。公開サイトの実行時依存関係へ追加しません。
 
 ## コード上の約束
 
