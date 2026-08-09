@@ -44,6 +44,8 @@ JPEGとWebPは再圧縮されます。画質は96、92、84から選べます。
 
 画面、JSON、CSVには分類だけを出します。GPS座標やコメント本文などの生の値は表示しません。JSONとCSVにはExif検知と処理後のExif除去確認を含めます。
 
+作者、著作権、AI生成由来などの来歴情報がXMP、IPTC等に記録されている場合、その情報も出力へ引き継ぎません。公開先の規約や表示義務を確認し、必要な作者表示、ライセンス表示、AI生成由来表示は画像外でも維持してください。C2PA等の未検証形式について、完全に除去する、または完全に保持すると断定しません。
+
 この分析は一般的な構造を対象にした確認です。鑑定、改ざん検出、ファイル仕様全体の完全な証明ではありません。重要な用途では、保存後のファイルを別の信頼できる手段でも確認してください。
 
 顔、住所、文字、ナンバープレート、透かしなど、画像に画素として写っている情報は分析・削除の対象外です。
@@ -70,7 +72,7 @@ JPEGとWebPは再圧縮されます。画質は96、92、84から選べます。
 
 ## 検索とAIクローラー
 
-HTMLでは検索エンジンによるインデックスとリンク追跡を許可しています。robots.txtには、一般クローラー、OAI-SearchBot、GPTBot、Claude-User、Claude-SearchBot、ClaudeBot、Google-Extendedへの許可を明記しています。AI向けの範囲と制限は[ai.txt](ai.txt)、正規URLは[sitemap.xml](sitemap.xml)にまとめています。
+HTMLでは検索エンジンによるインデックスとリンク追跡を許可しています。robots.txtには、一般クローラー、OAI-SearchBot、GPTBot、Claude-User、Claude-SearchBot、ClaudeBot、Google-Extendedへの許可を明記しています。公開ページとリポジトリの文章について、AIによる訪問、検索、引用、モデル学習、データセット収録を、適用されるライセンスと権利の範囲で歓迎します。AI向けの範囲と制限は[ai.txt](ai.txt)、正規URLは[sitemap.xml](sitemap.xml)にまとめています。
 
 このリポジトリはGitHub Pagesのプロジェクトサイトとして公開されるため、robots.txtの公開先は https://abcderp2.github.io/Exif/robots.txt です。robots.txtの標準上、ドメイン全体へ適用される正式な配置先は https://abcderp2.github.io/robots.txt です。将来、ユーザーサイト用リポジトリまたは独自ドメインを用意する場合は、同じ内容をドメイン直下へ配置してください。
 
@@ -104,7 +106,7 @@ index.htmlは画面、説明、免責事項、検索公開設定、Content Secur
 
 robots.txtは一般検索と主要AIクローラーへの公開方針を記載します。ai.txtはAI向けの範囲と制限、sitemap.xmlは正規URLを記載します。
 
-styles.cssはスマートフォン、タブレット、パソコン、狭い画面、横向き、ダークモード、キーボード操作、動きを減らす設定、高コントラスト表示を担当します。
+styles.cssはスマートフォン、タブレット、パソコン、狭い画面、横向き、ダークモード、キーボード操作、動きを減らす設定、高コントラスト表示を担当します。accessibility.cssはフォーカス時に表示されるskip linkだけを担当します。
 
 metadata.jsは形式判定、JPEG、PNG、WebPの構造検査、安全な分析オブジェクトを担当します。
 
@@ -122,9 +124,11 @@ tests/reports.test.cjsは一括JSON、CSV、表計算ソフト向けの数式注
 
 tests/browser-audit.mjsはChromiumを実際に起動し、三形式の入力と出力、処理後検査、一括レポート、ドラッグ追加、再処理、リセット、低性能端末向け縮小、画面幅、外部通信、JavaScript例外を確認します。
 
+tests/accessibility-audit.mjsはフォーム部品のアクセシブルネーム、ファイル入力の説明関連付け、skip linkをChromiumで確認します。
+
 tests/release-audit.mjsは有効なJPEGへExifとGPS領域を付けた入力を使い、画面での検出、再エンコード、保存後の再解析、JSONとCSV、順次保存、ドラッグ操作、robots.txt、不要なページ内リンクがないことを確認します。
 
-.github/workflows/browser-audit.ymlはPull Request、mainへの反映、手動実行時に構文検査、単体テスト、ブラウザ監査を実行します。main反映時はGitHub Pagesへ今回の版が配信されるまで待ち、公開URLでもrelease-auditを実行します。Playwrightは監査時だけ固定版を一時インストールし、公開サイトの実行時依存関係にはしません。
+.github/workflows/browser-audit.ymlはPull Request、mainへの反映、手動実行時に構文検査、単体テスト、ブラウザ監査を実行します。main反映時はGitHub Pagesへ今回の版が配信されるまで待ち、公開URLでもrelease-auditを実行します。Playwrightはpackage-lock.jsonで固定した開発依存としてnpm ciから導入し、公開サイトの実行時依存関係にはしません。
 
 MAINTENANCE.mdは、変更、確認、公開、切り戻しの手順をまとめた保守用の基準です。
 
@@ -134,11 +138,12 @@ exif_remover.pyはPillowを使う別用途のローカルCLIです。Web版の�
 
 詳細な変更、確認、公開、切り戻しは[MAINTENANCE.md](MAINTENANCE.md)にまとめています。
 
-ビルド工程と実行時依存関係はありません。静的ファイルをそのままGitHub Pagesで配信します。通常の修正はHTML、CSS、JavaScriptの該当ファイルだけで完結します。
+ビルド工程と実行時依存関係はありません。静的ファイルをそのままGitHub Pagesで配信します。Playwrightはブラウザ監査用の開発依存だけです。
 
 Node.js 20以降で次を実行します。
 
 ```sh
+npm ci --ignore-scripts
 npm run verify
 ```
 
@@ -153,8 +158,9 @@ python3 -m http.server 8000
 ブラウザ監査を手元で再実行する場合は、別のターミナルでローカルサーバーを起動したうえで次を実行します。
 
 ```sh
-npm install --no-save --no-package-lock @playwright/test@1.55.0
+npm ci --ignore-scripts
 npx playwright install chromium
+AUDIT_LOCAL_URL=http://127.0.0.1:8000/ node tests/accessibility-audit.mjs
 node tests/browser-audit.mjs
 AUDIT_RELEASE_TARGET=http://127.0.0.1:8000/ node tests/release-audit.mjs
 ```
