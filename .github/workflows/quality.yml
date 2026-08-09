@@ -67,5 +67,5 @@ jobs:
           grep -Fq 'User-agent: ClaudeBot' robots.txt
           grep -Fq 'User-agent: Google-Extended' robots.txt
           grep -Fq 'Sitemap:' robots.txt
-          grep -Fq 'Permissions-Policy' index.html
+          ! grep -Fiq 'http-equiv="Permissions-Policy"' index.html
           grep -Fq 'href="ai.txt"' index.html
