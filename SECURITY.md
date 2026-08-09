@@ -20,7 +20,9 @@ JSONとCSVには、検出した領域の分類、Exif検知、処理後のExif�
 
 ブラウザの画像デコーダー、Canvas、Worker、端末の保存機能、GitHub Pagesの配信基盤は、このリポジトリのコードだけでは保証できません。ブラウザとOSは更新された状態で利用してください。
 
-robots.txt、ai.txt、検索向けmeta要素は、公開ページをクローラーが訪問する際の方針です。認証、アクセス制御、秘密情報の保護にはなりません。利用者が選んだ画像をクローラーへ渡す処理はありません。HTMLのPermissions-Policyは不要な端末APIの利用意図を明示しますが、GitHub PagesのHTTPレスポンスヘッダーの完全な代替ではありません。
+robots.txt、ai.txt、検索向けmeta要素は、公開ページをクローラーが訪問する際の方針です。認証、アクセス制御、秘密情報の保護にはなりません。利用者が選んだ画像をクローラーへ渡す処理はありません。
+
+Permissions-PolicyはHTMLのhttp-equiv metaで代用しません。GitHub Pagesでは、このリポジトリの静的ファイルだけから任意のHTTPレスポンスヘッダーを自由に設定できないため、現在の用途ではCSP、外部通信禁止、入力検査、データ最小化を優先します。Content Security Policyはmeta要素で適用できる指示を維持しますが、frame-ancestorsなどmeta要素で適用できない指示を効いている防御として扱いません。将来、認証、決済、機密データ送信、端末API、または厳格な埋め込み禁止が必要になった場合は、Permissions-Policyやframe-ancestorsをHTTPレスポンスヘッダーで設定できる配信環境への移行を先に検討します。
 
 GitHub Pagesのプロジェクトサイトでは、このリポジトリのrobots.txtは /Exif/robots.txt として配信されます。ドメイン全体へ適用される標準上の配置先はドメイン直下の /robots.txt です。この違いをセキュリティ対策やアクセス制御として扱いません。
 
