@@ -4,9 +4,12 @@
   "version": "2.1.0",
   "description": "JPEG、PNG、WebPを端末内で一括処理し、付加情報を引き継がない静的ブラウザアプリ",
   "scripts": {
-    "check": "node --check app.js && node --check metadata.js && node --check reports.js && node --check image-worker.js && node --check tests/browser-audit.mjs && node --check tests/release-audit.mjs",
+    "check": "node --check app.js && node --check metadata.js && node --check reports.js && node --check image-worker.js && node --check tests/browser-audit.mjs && node --check tests/release-audit.mjs && node --check tests/accessibility-audit.mjs",
     "test": "node --test tests/*.test.cjs",
     "verify": "npm run check && npm test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0"
   },
   "engines": {
     "node": ">=20"
