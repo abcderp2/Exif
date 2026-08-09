@@ -28,22 +28,24 @@ APIキー、パスワード、秘密鍵、個人情報、利用者の画像をHT
 
 ## 自動検査
 
-Node.js 20以降で、通常の修正は次だけを実行します。追加パッケージは不要です。
+Node.js 20以降で、通常の修正は次を実行します。Playwrightはブラウザ監査用の開発依存としてpackage-lock.jsonに固定し、公開サイトの実行時依存にはしません。
 
 ```sh
+npm ci --ignore-scripts
 npm run verify
 ```
 
-ブラウザ監査を変更確認で使う場合だけ、Playwrightを一時的に導入します。これは開発時の確認用で、公開サイトへ配信せず、追加課金も発生しません。
+ブラウザ監査を変更確認で使う場合は、lockfileから依存を導入したあとChromiumだけを明示的に導入します。
 
 ```sh
-npm install --no-save --no-package-lock @playwright/test@1.55.0
+npm ci --ignore-scripts
 npx playwright install chromium
+AUDIT_LOCAL_URL=http://127.0.0.1:8000/ node tests/accessibility-audit.mjs
 node tests/browser-audit.mjs
 AUDIT_RELEASE_TARGET=http://127.0.0.1:8000/ node tests/release-audit.mjs
 ```
 
-監査用の`node_modules`、一時的なブラウザー、package-lock.jsonをコミットしません。ローカル表示が必要な場合は、リポジトリ直下で`python3 -m http.server 8000`を使い、file形式のURLだけで動作確認しません。
+`node_modules`や一時的なブラウザーをコミットしません。package.jsonとpackage-lock.jsonは開発依存の再現性を保つためコミット対象です。ローカル表示が必要な場合は、リポジトリ直下で`python3 -m http.server 8000`を使い、file形式のURLだけで動作確認しません。
 
 ## 手動確認
 
@@ -81,7 +83,7 @@ git revert <戻したいマージコミット>
 git push
 ```
 
-対象が分からないまま`git reset --hard`、履歴の強制push、リポジトリ削除を実行しません。切り戻し後も`npm run verify`と必要なブラウザ監査を実行します。
+対象が分からないまま`git reset --hard`、履歴の強制push、リポジトリ削除を実行しません。切り戻し後も`npm ci --ignore-scripts`、`npm run verify`と必要なブラウザ監査を実行します。
 
 ## AIへ保守を依頼する場合
 
@@ -91,7 +93,7 @@ git push
 このリポジトリは追加課金なしのGitHub Pages静的サイトです。
 画像は端末内だけで処理し、外部API、CDN、広告、解析、Cookie、永続ストレージを追加しません。
 対応形式、上限、セキュリティ、README、SECURITY.md、CONTRIBUTING.md、MAINTENANCE.mdを同じ差分で確認します。
-変更は小さく1目的に絞り、npm run verifyを実行してからPull Requestにします。
+変更は小さく1目的に絞り、npm ci --ignore-scriptsとnpm run verifyを実行してからPull Requestにします。
 ```
 
 AIが提案した差分は、対象ファイル、表示幅、処理上限、外部通信、秘密情報、切り戻し方法を人が確認してから反映します。
