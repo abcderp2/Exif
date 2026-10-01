@@ -9,7 +9,7 @@
     "verify": "npm run check && npm test"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1"
+    "@playwright/test": "1.63.0"
   },
   "engines": {
     "node": ">=20"
